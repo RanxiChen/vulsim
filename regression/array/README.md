@@ -6,6 +6,7 @@ FPU 是用于验证参数化数据通路的位向量测试模块，并非浮点�
 - `arr1` 使用 `COORD(0)=ROW`，`arr2` 保留 `ROW=3` 默认值。
 - PE 显式传递 `WIDTH=ROW+9` 和 `DEPTH=ROW+1`；FPU 的 `TAG=23` 保持默认值，`DERIVED=DEPTH+3` 验证依赖默认参数。
 - 命令沿 `CONNECT_S_CS` 和子服务到达 FPU；QUERY 汇总回 Top；PE 的流事务通过 `CONNECT_CR_S` 写入 Top 快照。
+- Main 将两个通道组的输入分别组成 `std::array<uint32_t,8>` 和 `std::array<uint32_t,4>`，使用 `submit1(first_data)`／`submit2(second_data)` 批量提交；原有预期值和断言保持不变。
 - 对每个周期检查数据截断、实例独立状态、事务索引、队列满时序和前周期数据；重复复位后重新运行。
 - 生成器专项脚本另检查五组声明路径、25 个具体实例、非法绑定、非方形完整绑定、嵌套结构变化、调用诊断和 priority；同时严格比较原始 `systolic2d` 的双路径输出，检查 RTL 实现去重及具体 Trace 路径。
 

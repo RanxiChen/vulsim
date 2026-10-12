@@ -266,8 +266,17 @@
 
 **文件功能**：共享具体实例端点展开，保留声明路径生成身份。
 
-- `materializeConcreteConnections(...)`：绑定源坐标并求值目标索引，展开边界通配到事务索引；分析、验证和两种生成器使用相同连接结果。
+- `materializeConcreteConnections(...)`：绑定源坐标并求值目标索引，展开多维边界通配与子事务维度到扁平事务索引，落实隐式子服务 REQUEST 的完整形状；分析、验证和两种生成器使用相同连接结果。
 - `concreteGenerationView(...)`：将具体子节点和连接转换为生成视图，不改变声明路径及坐标上下文。
+
+## src/port_shape.cpp / src/port_shape.h
+
+**文件功能**：共享多维事务形状与调用降低规则。
+
+- `portCoordinates(...)` / `portSubscript(...)` / `portIndexExpression(...)`：按最后一维变化最快转换坐标、参数访问和扁平编号。
+- `portArrayType(...)` / `portRequestFacade(...)`：构造嵌套数组类型，以及显式坐标／批量 REQUEST 接口；批量 ARG 取得值副本、RESP 保持引用、握手返回逐端口结果。
+- `portCallSlots(...)`：静态校验调用坐标或展开全部调用端点。
+- `lowerPortIndexDims(...)`：将 Service 的 `IDX_DIM` 降低为一致的坐标常量表达式。
 
 ## src/module.cpp
 
@@ -277,7 +286,7 @@
 - `staticalizeReqServ(...)`：静态化 request/service 定义。
 - `instantiateModule(...)`：静态化模块参数、状态和子实例声明；Service 可由逻辑实现或通过 `CONNECT_S_CS` 转发。
 - `detectRequestCallInLogicBlocks(...)`：扫描逻辑块中的 request/service 调用。
-- `setupUpdateSequence(...)`：按具体实例与事务索引建图，静态求值调用索引及 `if constexpr`，区分真实调用环、重复调用和多更新源；将 priority 约束投影到公共祖先，保存具体子实例更新序列。
+- `setupUpdateSequence(...)`：按具体实例与事务索引建图，静态求值多维调用索引及 `if constexpr`，将批量调用展开到所有端点，区分真实调用环、重复调用和多更新源；将 priority 约束投影到公共祖先，保存具体子实例更新序列。
 
 ## src/module.h
 
@@ -480,4 +489,4 @@
 
 ## regression/generator_array_instances.py / regression/array_instances
 
-**文件功能**：验证五组声明路径与 25 个具体实例、COORD 合法性、嵌套结构变化、用户参数隔离、调用诊断与 priority，严格检查原始 systolic2d 双路径输出、RTL 实现去重及具体 Trace 路径；硬件回归逐周期验证参数化截断、队列容量、事务连接和复位，并同时运行 C++/RTL。
+**文件功能**：验证五组声明路径与 25 个具体实例、COORD 合法性、嵌套结构变化、用户参数隔离、调用诊断与 priority，严格检查原始 systolic2d 双路径输出、RTL 实现去重及具体 Trace 路径；硬件回归使用批量 REQUEST 提交，逐周期验证参数化截断、队列容量、事务连接和复位，并同时运行 C++/RTL。

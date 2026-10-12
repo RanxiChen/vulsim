@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <array>
 #include <cstdio>
 #include <defhelper.hpp>
 #include <run.hpp>
@@ -21,9 +22,12 @@ SIMULATION() {
             }
             for (uint32_t i = 0; i < 4; ++i) if (before.second[i] != expected2[i]) { printf("second[%u] cycle=%u actual=%u expected=%u\n", i, cycle, before.second[i], expected2[i]); std::exit(2); }
             const uint32_t data = 0xA1935u + cycle * 1031;
-            submit1<0>(data); submit1<1>(data+1); submit1<2>(data+2); submit1<3>(data+3);
-            submit1<4>(data+4); submit1<5>(data+5); submit1<6>(data+6); submit1<7>(data+7);
-            submit2<0>(data+20); submit2<1>(data+21); submit2<2>(data+22); submit2<3>(data+23);
+            std::array<uint32_t, 8> first_data{};
+            std::array<uint32_t, 4> second_data{};
+            for (uint32_t i = 0; i < 8; ++i) first_data[i] = data+i;
+            for (uint32_t i = 0; i < 4; ++i) second_data[i] = data+20+i;
+            submit1(first_data);
+            submit2(second_data);
             sim_nextcycle();
             ArraySnapshot after = snapshot();
             for (uint32_t i = 0; i < 8; ++i) {

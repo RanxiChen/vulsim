@@ -94,8 +94,8 @@ struct VulReqServConnection {
     InstanceName    serv_instance_base;
     vector<VulConnIndexExpr> serv_indices;
 
-    int32_t req_port_index = -1;
-    int32_t serv_port_index = -1;
+    int64_t req_port_index = -1;
+    int64_t serv_port_index = -1;
 
     inline string toString() const {
         string req_side = "'" + req_instance + "'.'" + req_name + "'";
@@ -159,6 +159,7 @@ struct VulReqServParamRef {
 struct VulTempReqServBase {
     string name;
     string array_size; // empty means non-arrayed request/service port
+    vector<string> port_dims;
     vector<pair<string, string>> args; // pair of argument type and name
     vector<pair<string, string>> rets; // pair of response type and name
     vector<VulReqServParamRef> param_order; // source declaration order across ARG/RESP
@@ -360,6 +361,7 @@ struct VulStaticChildServiceUse {
     ReqServName service_name;
     bool alias_indexed = false;
     ConfigRealValue alias_index = 0;
+    uint32_t service_port_index = 0;
 };
 
 struct VulStaticChildQueryUse {
@@ -380,6 +382,7 @@ struct VulStaticReqServ {
     ReqServName name;
     bool is_arrayed = false;
     ConfigRealValue array_size = 1;
+    vector<ConfigRealValue> port_dims;
     vector<VulStaticArg> args;
     vector<VulStaticArg> rets;
     vector<VulReqServParamRef> param_order;
@@ -389,6 +392,7 @@ struct VulStaticReqServ {
         if (a.has_handshake != has_handshake) return false;
         if (a.is_arrayed != is_arrayed) return false;
         if (a.array_size != array_size) return false;
+        if (a.port_dims != port_dims) return false;
         if (a.args.size() != args.size()) return false;
         for (size_t i = 0; i < a.args.size(); ++i) {
             if (a.args[i].type != args[i].type) return false;
@@ -509,6 +513,8 @@ inline string concreteInstanceName(const string &name, const vector<ConfigRealVa
 }
 
 struct VulStaticModuleInstance {
+    std::map<string, vector<ConfigRealValue>> child_service_shapes;
+    bool child_service_ports_materialized = false;
 
     inline vector<string> normalizedInstancePath() const {
         vector<const VulStaticModuleInstance *> chain;

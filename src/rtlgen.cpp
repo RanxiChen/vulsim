@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "rtlgen.h"
+#include "port_shape.h"
 #include "instance_graph.h"
 #include "apiinline/apiinline.hpp"
 #include "apiinline/register_usage_check.hpp"
@@ -888,7 +889,7 @@ void _procServicesAndTicks(RTLGenContext &ctx) {
         } else {
             ctx.hls_blocks.push_back("auto " + implFuncName(serv_name) + " = [&](" + arglists + ") -> void {\n");
         }
-        vulDebugAppendLines(ctx.hls_blocks, ctx.hls_blocks_debug, lb.codelines, lb.codelines_debug);
+        vulDebugAppendLines(ctx.hls_blocks, ctx.hls_blocks_debug, lowerPortIndexDims(lb.codelines, serv.port_dims, ctx.module.connection_config), lb.codelines_debug);
         ctx.hls_blocks.push_back("};\n");
         if (has_rdy) {
             if (is_arrayed) {
@@ -896,7 +897,7 @@ void _procServicesAndTicks(RTLGenContext &ctx) {
             } else {
                 ctx.hls_blocks.push_back("auto " + condFuncName(serv_name) + " = [&](" + arglists + ") -> bool {\n");
             }
-            vulDebugAppendLines(ctx.hls_blocks, ctx.hls_blocks_debug, lb.cond_codelines, lb.cond_codelines_debug);
+            vulDebugAppendLines(ctx.hls_blocks, ctx.hls_blocks_debug, lowerPortIndexDims(lb.cond_codelines, serv.port_dims, ctx.module.connection_config), lb.cond_codelines_debug);
             ctx.hls_blocks.push_back("};\n");
         }
 
@@ -1203,6 +1204,9 @@ void _procChildrenAndConnection(RTLGenContext &ctx) {
 
 
             const bool is_alias_arrayed = group.front().alias_indexed;
+            auto alias_port = serv;
+            alias_port.name = alias_name; alias_port.port_dims = ctx.module.child_service_shapes.at(alias_name);
+            alias_port.is_arrayed = is_alias_arrayed; alias_port.array_size = group.size();
             if (!is_alias_arrayed && serv.returnType() == "void") {
                 const string signal_base = childServiceSignalBase(group.front().instance_name, group.front().service_name);
                 vector<string> arg_macro_names;
@@ -1251,34 +1255,35 @@ void _procChildrenAndConnection(RTLGenContext &ctx) {
             }
             const string v2_arglists = reqservValueArgList(serv);
             if (is_alias_arrayed) {
-                ctx.hls_helpers.push_back("auto " + alias_name + " = [&]<uint32_t IDX = 0>(" + v2_arglists + ") -> " + serv.returnType() + " {\n");
+                ctx.hls_helpers.push_back("auto " + portFlatName(alias_name) + " = [&]<uint32_t IDX>(" + v2_arglists + ") -> " + serv.returnType() + " {\n");
                 ctx.hls_helpers.push_back("  static_assert(IDX < " + std::to_string(group.size()) + ", \"Implicit request index out of range\");\n");
             } else {
                 ctx.hls_helpers.push_back("auto " + alias_name + " = [&](" + v2_arglists + ") -> " + serv.returnType() + " {\n");
             }
             for (size_t i = 0; i < group.size(); ++i) {
                 const string signal_base = childServiceSignalBase(group[i].instance_name, group[i].service_name);
+                const string selected = serv.is_arrayed ? "[" + std::to_string(group[i].service_port_index) + "]" : "";
                 string indent = "  ";
                 if (is_alias_arrayed) {
                     string branch = (i == 0 ? "if constexpr" : "else if constexpr");
                     ctx.hls_helpers.push_back("  " + branch + " (IDX == " + std::to_string(group[i].alias_index) + ") {\n");
                     indent = "    ";
                 }
-                ctx.hls_helpers.push_back(indent + reqservVldPort(signal_base) + " = true;\n");
+                ctx.hls_helpers.push_back(indent + reqservVldPort(signal_base) + selected + " = true;\n");
                 for (const auto &arg : arg_ports) {
                     const string arg_port_name = reqservArgPort(signal_base, arg.name);
                     for (const auto &field : arg.flat_fields) {
-                        ctx.hls_helpers.push_back(indent + uintExtractExpr(arg_port_name, field.offset + field.width - 1, field.offset) + " = " + packFlatFieldExpr(field, field.name) + ";\n");
+                        ctx.hls_helpers.push_back(indent + uintExtractExpr(arg_port_name + selected, field.offset + field.width - 1, field.offset) + " = " + packFlatFieldExpr(field, field.name) + ";\n");
                     }
                 }
                 for (const auto &ret : ret_ports) {
                     const string ret_port_name = reqservArgPort(signal_base, ret.name);
                     for (const auto &field : ret.flat_fields) {
-                        ctx.hls_helpers.push_back(indent + field.name + " = " + typedExtractExpr(field, ret_port_name) + ";\n");
+                        ctx.hls_helpers.push_back(indent + field.name + " = " + typedExtractExpr(field, ret_port_name + selected) + ";\n");
                     }
                 }
                 if (serv.has_handshake) {
-                    ctx.hls_helpers.push_back(indent + "return " + reqservRdyPort(signal_base) + ";\n");
+                    ctx.hls_helpers.push_back(indent + "return " + reqservRdyPort(signal_base) + selected + ";\n");
                 } else if (serv.returnType() == "void") {
                     ctx.hls_helpers.push_back(indent + "return;\n");
                 }
@@ -1290,6 +1295,11 @@ void _procChildrenAndConnection(RTLGenContext &ctx) {
                 }
             }
             ctx.hls_helpers.push_back("};\n");
+            if (is_alias_arrayed) {
+                ctx.hls_helpers.push_back("auto __vul_bulk_" + alias_name + " = [&](" + portBulkArguments(alias_port) + ") -> " + portArrayType(serv.returnType(), alias_port.port_dims) + " {\n");
+                ctx.hls_helpers.push_back(portBulkBody(alias_port, portFlatName(alias_name), true));
+                ctx.hls_helpers.push_back("};\n");
+            }
 
     }
 
@@ -1967,6 +1977,17 @@ static string verilatorIndexedTopExpr(const string &port_name, bool is_arrayed, 
     return verilatorTopExpr(port_name);
 }
 
+static void emitVerilatorUnpackField(vector<string> &out, const FlatField &field, const string &src, const string &indent) {
+    if (field.is_fixint) {
+        for (uint32_t bit = 0; bit < field.width; bit += 64) {
+            uint32_t size = std::min(64u, field.width-bit);
+            out.push_back(indent + field.name + ".template pick<" + std::to_string(size) + ">(" + std::to_string(bit) + ") = static_cast<uint64_t>(__vul_get_bits(" + src + ", " + std::to_string(field.offset+bit) + ", " + std::to_string(size) + "));\n");
+        }
+    } else {
+        out.push_back(indent + field.name + " = static_cast<std::remove_cvref_t<decltype(" + field.name + ")>>(__vul_get_bits(" + src + ", " + std::to_string(field.offset) + ", " + std::to_string(field.width) + "));\n");
+    }
+}
+
 static void emitVerilatorUnpack(
     vector<string> &out,
     const ArgPort &port,
@@ -1977,12 +1998,7 @@ static void emitVerilatorUnpack(
     if (declare_value) {
         out.push_back(indent + port.type.toString() + " " + port.name + " = {};\n");
     }
-    for (const auto &field : port.flat_fields) {
-        out.push_back(
-            indent + field.name + " = static_cast<std::remove_cvref_t<decltype(" + field.name + ")>>(__vul_get_bits(" +
-            src_expr + ", " + std::to_string(field.offset) + ", " + std::to_string(field.width) + "));\n"
-        );
-    }
+    for (const auto &field : port.flat_fields) emitVerilatorUnpackField(out, field, src_expr, indent);
 }
 
 static void emitVerilatorPack(
@@ -1993,11 +2009,13 @@ static void emitVerilatorPack(
     const string &indent
 ) {
     for (const auto &field : port.flat_fields) {
-        out.push_back(
-            indent + "__vul_set_bits(" + dst_expr + ", " + std::to_string(field.offset) + ", " +
-            std::to_string(field.width) + ", static_cast<__uint128_t>(" +
-            flatFieldValueExpr(value_root, field.name) + "));\n"
-        );
+        string value = flatFieldValueExpr(value_root, field.name);
+        if (field.is_fixint) {
+            for (uint32_t bit = 0; bit < field.width; bit += 64) {
+                uint32_t size = std::min(64u, field.width-bit);
+                out.push_back(indent + "__vul_set_bits(" + dst_expr + ", " + std::to_string(field.offset+bit) + ", " + std::to_string(size) + ", static_cast<uint64_t>(" + value + ".template pick<" + std::to_string(size) + ">(" + std::to_string(bit) + ")));\n");
+            }
+        } else out.push_back(indent + "__vul_set_bits(" + dst_expr + ", " + std::to_string(field.offset) + ", " + std::to_string(field.width) + ", static_cast<__uint128_t>(" + value + "));\n");
     }
 }
 
@@ -2203,8 +2221,10 @@ vector<string> genVerilatorTestMainCpp(
         const bool is_arrayed = top_serv.is_arrayed;
         const uint32_t array_size = static_cast<uint32_t>(top_serv.array_size);
         const uint32_t emit_count = is_arrayed ? array_size : 1;
-        if (is_arrayed) out.push_back("  template<uint32_t IDX = 0>\n");
-        out.push_back("  " + top_serv.signatureFull() + " {\n");
+        if (is_arrayed) out.push_back("  template<uint32_t IDX>\n");
+        auto method = top_serv;
+        if (is_arrayed) method.name = portFlatName(name);
+        out.push_back("  " + method.signatureFull() + " {\n");
         if (is_arrayed) out.push_back("    static_assert(IDX < " + std::to_string(array_size) + ", \"Request index out of range\");\n");
         for (uint32_t idx = 0; idx < emit_count; ++idx) {
             if (is_arrayed) out.push_back("    if constexpr (IDX == " + std::to_string(idx) + ") {\n");
@@ -2229,6 +2249,7 @@ vector<string> genVerilatorTestMainCpp(
             if (!is_arrayed) break;
         }
         out.push_back("  }\n");
+        out.push_back(portRequestFacade(top_serv));
         out.push_back("\n");
     }
 
@@ -2241,13 +2262,8 @@ vector<string> genVerilatorTestMainCpp(
         out.push_back("    top->eval();\n");
         out.push_back("    " + query.ret_type.toString() + " value = " +
                       apiinline::defaultValueExprForType(query.ret_type, bundlelib) + ";\n");
-        for (const auto &field : flat_fields) {
-            out.push_back(
-                "    " + field.name + " = static_cast<std::remove_cvref_t<decltype(" + field.name + ")>>(__vul_get_bits(" +
-                verilatorTopExpr(queryPort(name)) + ", " + std::to_string(field.offset) + ", " +
-                std::to_string(field.width) + "));\n"
-            );
-        }
+        for (const auto &field : flat_fields)
+            emitVerilatorUnpackField(out, field, verilatorTopExpr(queryPort(name)), "    ");
         out.push_back("    return value;\n");
         out.push_back("  }\n");
         out.push_back("\n");
@@ -2417,7 +2433,7 @@ vector<string> genVerilatorTestMainCpp(
         VulStaticReqServ serv = staticalizeReqServ(temp_serv, project.global_configlib);
         if (top_req.is_arrayed) out.push_back("  template<uint32_t IDX>\n");
         out.push_back("  void __impl_" + name + "(" + top_req.signatureArgOnly() + ") {\n");
-        for (const auto &line : temp_serv.codelines) {
+        for (const auto &line : lowerPortIndexDims(temp_serv.codelines, top_req.port_dims, project.global_configlib)) {
             out.push_back("    " + line);
             if (line.empty() || line.back() != '\n') out.push_back("\n");
         }
@@ -2426,7 +2442,7 @@ vector<string> genVerilatorTestMainCpp(
             out.push_back("\n");
             if (top_req.is_arrayed) out.push_back("  template<uint32_t IDX>\n");
             out.push_back("  bool __cond_" + name + "(" + top_req.signatureArgOnly() + ") {\n");
-            out.push_back("    return (" + temp_serv.cond + ");\n");
+            out.push_back("    return (" + lowerPortIndexDims(temp_serv.cond, top_req.port_dims, project.global_configlib) + ");\n");
             out.push_back("  }\n");
         }
         out.push_back("\n");

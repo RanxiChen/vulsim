@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "module.h"
+#include "port_shape.h"
 #include "configexpr.hpp"
 #include "toposort.hpp"
 #include "cppparse.hpp"
@@ -307,7 +308,7 @@ static bool sameServiceDeclarationSignature(
         reason = "array attribute presence differs";
         return false;
     }
-    if (decl.array_size != impl.array_size) {
+    if (decl.port_dims != impl.port_dims) {
         reason = "array size differs";
         return false;
     }
@@ -355,14 +356,16 @@ VulStaticReqServ staticalizeReqServ(const VulTempReqServBase &item, const VulSta
     static_req.array_size = 1;
     static_req.has_handshake = item.has_handshake;
     static_req.param_order = item.param_order;
-    if (!item.array_size.empty()) {
-        ConfigRealValue array_size = calculateConstexprValue(item.array_size, config_lib);
-        if (array_size <= 0) {
-            throw VulException("ARRAY() must be positive for request/service '" + item.name + "'");
-        }
-        static_req.is_arrayed = true;
-        static_req.array_size = array_size;
+    auto dims = item.port_dims;
+    if (!item.array_size.empty()) dims = {item.array_size};
+    for (const auto &expr : dims) {
+        auto dim = calculateConstexprValue(expr, config_lib);
+        if (dim <= 0 || uint64_t(dim) > UINT32_MAX / uint64_t(static_req.array_size))
+            throw VulException("Transaction dimensions must be positive and their product must fit uint32_t: " + item.name);
+        static_req.port_dims.push_back(dim);
+        static_req.array_size *= dim;
     }
+    static_req.is_arrayed = !dims.empty();
     for (const auto &arg : item.args) {
         VulStaticArg static_arg;
         static_arg.name = arg.second;
@@ -701,9 +704,6 @@ void instantiateModule(
                     }
                 }
             }
-            if (wildcard_count > 1) {
-                throw VulException("Only one '*' wildcard is supported in a module boundary connection");
-            }
         };
 
         if (!req_is_top) {
@@ -837,70 +837,33 @@ void instantiateModule(
     };
 
     instance.child_service_uses.clear();
+    instance.child_service_shapes.clear();
+    instance.child_service_ports_materialized = false;
     for (const auto &temp_use : temp.child_service_uses) {
-        const ParsedInstanceExpr child_expr = parseInstanceExpr(temp_use.instance_expr);
-        const auto &child_decl = requireInstanceDecl(instance.instances, child_expr.base_name, "processing USE_CHILD_SERVICE_PORT");
-        if (child_expr.index_exprs.empty()) {
-            if (child_decl.isArrayed()) {
-                throw VulException("Array child instance '" + child_expr.base_name + "' requires explicit indices in USE_CHILD_SERVICE_PORT");
-            }
-            reject_child_alias_array_size("USE_CHILD_SERVICE", temp_use.alias_name, temp_use.array_size);
-            VulStaticChildServiceUse use;
-            use.alias_name = temp_use.alias_name;
-            use.instance_name = child_expr.base_name;
-            use.service_name = temp_use.service_name;
-            instance.child_service_uses.push_back(std::move(use));
-            continue;
+        const auto expr = parseInstanceExpr(temp_use.instance_expr);
+        const auto &decl = requireInstanceDecl(instance.instances, expr.base_name, "processing USE_CHILD_SERVICE");
+        if (expr.index_exprs.size() != decl.array_dims.size())
+            throw VulException("Array child instance requires explicit indices in USE_CHILD_SERVICE");
+        vector<ConfigRealValue> shape;
+        for (size_t d = 0; d < expr.index_exprs.size(); ++d)
+            if (stringop::trim(expr.index_exprs[d]) == "*") shape.push_back(decl.array_dims[d]);
+        instance.child_service_shapes[temp_use.alias_name] = shape;
+        ConfigRealValue count = 1; for (auto dim : shape) count *= dim;
+        if (!temp_use.array_size.empty()) {
+            if (shape.size() != 1 || calculateConstexprValue(temp_use.array_size, local_config_lib) != count)
+                throw VulException("USE_CHILD_SERVICE array size does not match wildcard shape");
         }
-        if (child_expr.index_exprs.size() != child_decl.array_dims.size()) {
-            throw VulException("Dimension mismatch for child instance '" + child_expr.base_name + "' in USE_CHILD_SERVICE_PORT");
-        }
-        vector<size_t> wildcard_dims = collectWildcardDims(child_expr);
-        if (wildcard_dims.size() > 1) {
-            throw VulException("Only one '*' wildcard is supported in USE_CHILD_SERVICE_PORT");
-        }
-        if (wildcard_dims.empty()) {
-            string concrete_name;
-            if (!tryResolveConcreteInstance(child_expr, child_decl, local_config_lib, {}, concrete_name)) {
-                throw VulException("Indexed child instance out of range in USE_CHILD_SERVICE_PORT");
-            }
-            reject_child_alias_array_size("USE_CHILD_SERVICE", temp_use.alias_name, temp_use.array_size);
-            VulStaticChildServiceUse use;
-            use.alias_name = temp_use.alias_name;
-            use.instance_name = concrete_name;
-            use.service_name = temp_use.service_name;
-            instance.child_service_uses.push_back(std::move(use));
-            continue;
-        }
-
-        const size_t wildcard_dim = wildcard_dims[0];
-        check_child_alias_array_size("USE_CHILD_SERVICE", temp_use.alias_name,
-                                     temp_use.array_size, child_decl.array_dims[wildcard_dim]);
-        for (ConfigRealValue wildcard_idx = 0; wildcard_idx < child_decl.array_dims[wildcard_dim]; ++wildcard_idx) {
-            vector<ConfigRealValue> concrete_indices;
-            concrete_indices.reserve(child_expr.index_exprs.size());
-            bool valid = true;
-            for (size_t dim = 0; dim < child_expr.index_exprs.size(); ++dim) {
-                if (dim == wildcard_dim && stringop::trim(child_expr.index_exprs[dim]) == "*") {
-                    concrete_indices.push_back(wildcard_idx);
-                    continue;
-                }
-                ConfigRealValue idx = calculateConstexprValue(child_expr.index_exprs[dim], local_config_lib);
-                if (idx < 0 || idx >= child_decl.array_dims[dim]) {
-                    valid = false;
-                    break;
-                }
-                concrete_indices.push_back(idx);
-            }
-            if (!valid) {
-                continue;
+        for (uint32_t i = 0; i < count; ++i) {
+            const auto wild = portCoordinates(i, shape);
+            vector<ConfigRealValue> coords; size_t w = 0;
+            for (size_t d = 0; d < expr.index_exprs.size(); ++d) {
+                auto value = stringop::trim(expr.index_exprs[d]) == "*" ? wild[w++] : calculateConstexprValue(expr.index_exprs[d], local_config_lib);
+                if (value < 0 || value >= decl.array_dims[d]) throw VulException("Indexed child instance out of range in USE_CHILD_SERVICE");
+                coords.push_back(value);
             }
             VulStaticChildServiceUse use;
-            use.alias_name = temp_use.alias_name;
-            use.instance_name = arrayInstanceName(child_expr.base_name, concrete_indices);
-            use.service_name = temp_use.service_name;
-            use.alias_indexed = true;
-            use.alias_index = wildcard_idx;
+            use.alias_name = temp_use.alias_name; use.instance_name = arrayInstanceName(expr.base_name, coords);
+            use.service_name = temp_use.service_name; use.alias_indexed = !shape.empty(); use.alias_index = i;
             instance.child_service_uses.push_back(std::move(use));
         }
     }
@@ -1064,6 +1027,7 @@ vector<std::pair<size_t, string>> transactionCallIndices(string text, const stri
             }
             if (position == text.size()) continue;
             expression = text.substr(begin, position - begin);
+            if (expression.empty()) expression = " ";
             position = text.find_first_not_of(" \t\r\n", position + 1);
         }
         if (position < text.size() && text[position] == '(') out.push_back({it->position(), expression});
@@ -1199,7 +1163,9 @@ void setupUpdateSequence(shared_ptr<VulStaticModuleInstance> &top) {
     auto scan = [&](const shared_ptr<VulStaticModuleInstance> &inst, uint64_t source, const vector<string> &lines, uint32_t slot, const VulDebugLocs &locations) {
         auto config = inst->connection_config;
         config["IDX"] = slot;
-        const string text = activeConstexprCode(joinCode(lines), config);
+        vector<ConfigRealValue> service_shape;
+        if (source & 0xFFFFFFFF) service_shape = inst->services.at(service_nodes.at(source).port).port_dims;
+        const string text = activeConstexprCode(lowerPortIndexDims(joinCode(lines), service_shape, config), config);
         vector<string> names;
         for (const auto &[name, _] : inst->requests) names.push_back(name);
         for (const auto &use : inst->child_service_uses)
@@ -1213,23 +1179,22 @@ void setupUpdateSequence(shared_ptr<VulStaticModuleInstance> &top) {
                 if (line_index < locations.size()) call.source_location = locations[line_index];
                 const string location = call.source_location.valid() ? " at " + call.source_location.file + ":" + std::to_string(call.source_location.line) : "";
                 VulErrorContextGuard call_guard("Analyzing transaction call '" + name + "' in " + inst->concatInstancePath("::", true) + location);
-                uint32_t idx = 0;
-                if (!call.index_expression.empty()) {
-                    auto value = calculateConstexprValue(call.index_expression, config);
-                    if (value < 0 || value > UINT32_MAX) throw VulException("Transaction index out of range: " + name);
-                    idx = value;
-                }
+                auto dims = inst->requests.contains(name) ? inst->requests.at(name).port_dims : inst->child_service_shapes.at(name);
                 vector<uint64_t> targets;
-                if (inst->requests.contains(name)) targets = resolve(inst, name, idx, false, {});
-                else {
-                    bool found = false;
-                    for (const auto &use : inst->child_service_uses) {
-                        if (use.alias_name != name || (use.alias_indexed && use.alias_index != idx)) continue;
-                        auto child = childByName(inst, use.instance_name);
-                        auto result = resolve(child, use.service_name, use.alias_indexed ? 0 : idx, true, {});
-                        targets.insert(targets.end(), result.begin(), result.end()); found = true;
+                for (auto idx : portCallSlots(dims, call.index_expression, config)) {
+                    if (inst->requests.contains(name)) {
+                        auto result = resolve(inst, name, idx, false, {});
+                        targets.insert(targets.end(), result.begin(), result.end());
+                    } else {
+                        bool found = false;
+                        for (const auto &use : inst->child_service_uses) {
+                            if (use.alias_name != name || (use.alias_indexed && use.alias_index != idx)) continue;
+                            auto child = childByName(inst, use.instance_name);
+                            auto result = resolve(child, use.service_name, use.service_port_index, true, {});
+                            targets.insert(targets.end(), result.begin(), result.end()); found = true;
+                        }
+                        if (!found) throw VulException("Child service alias index out of range: " + name);
                     }
-                    if (!found) throw VulException("Child service alias index out of range: " + name);
                 }
                 auto &edges = logic_block_call_graph[source];
                 edges.insert(edges.end(), targets.begin(), targets.end());

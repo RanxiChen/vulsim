@@ -341,7 +341,7 @@ TICK_IMPL() {
 - `ARG(type) name`：只读输入参数，调用方驱动被调用方。
 - `RESP(type) name`：只写响应参数，被调用方驱动调用方。
 
-### REQUEST(name, handshake=0, array=N, ARG(...), RESP(...))
+### REQUEST(name, handshake=0, array=N / dims=[...], ARG(...), RESP(...))
 
 定义请求事务端口：
 
@@ -354,7 +354,8 @@ REQUEST(lane_out, array=LANES, ARG(uint32_t) data);
 参数说明：
 
 - `handshake`：是否包含 valid-ready 握手返回值，默认 `0`。`handshake=1` 时事务函数调用返回 `bool`。
-- `array`：阵列化事务端口数量。省略时为普通端口。
+- `array`：一维事务端口数量，等价于 `dims=[N]`。
+- `dims`：事务阵列形状，支持多维正整数常量表达式，维度乘积必须能用 `uint32_t` 表示；不得与 `array`／`ARRAY` 混用。省略阵列属性时为普通端口。
 - `ARG/RESP`：端口参数列表。
 
 等价行为：
@@ -364,7 +365,7 @@ REQUEST(send, ARG(uint8_t) data);              // void send(const uint8_t &data)
 REQUEST(send, handshake=1, ARG(uint8_t) data); // bool send(const uint8_t &data);
 ```
 
-阵列化请求端口调用时使用模板参数：
+阵列化请求端口支持显式坐标调用和无模板参数的批量调用：
 
 ```cpp
 REQUEST(out, array=2, ARG(uint32_t) data);
@@ -375,7 +376,32 @@ TICK_IMPL() {
 }
 ```
 
-### SERVICE(name, handshake=0, ready=cond, priority=prio, array=N, ARG(...), RESP(...)) { ... }
+多维示例：
+
+```cpp
+REQUEST(fetch, handshake=1, dims=[2,3], ARG(uint32_t) address, RESP(uint32_t) data);
+
+TICK_IMPL() {
+    std::array<std::array<uint32_t,3>,2> address{};
+    std::array<std::array<uint32_t,3>,2> data{};
+    auto accepted = fetch(address, data);
+    // accepted 是 std::array<std::array<bool,3>,2>。
+    // 等价于
+    // accepted[0][0] = fetch<0,0>(address[0][0], data[0][0]);
+    // accepted[0][1] = fetch<0,1>(address[0][1], data[0][1]);
+    // accepted[0][2] = fetch<0,2>(address[0][2], data[0][2]);
+    // accepted[1][0] = fetch<1,0>(address[1][0], data[1][0]);
+    // accepted[1][1] = fetch<1,1>(address[1][1], data[1][1]);
+    // accepted[1][2] = fetch<1,2>(address[1][2], data[1][2]);
+    // 仅在 accepted[i][j] 为真时使用 data[i][j]。
+}
+```
+
+`fetch<1,2>(address[1][2], data[1][2])` 调用一个端口，参数仍使用原始标量类型。多维索引必须逐维完整给出，不能用一个扁平模板索引代替。裸调用按最后一维变化最快的顺序尝试所有端口，每个端口恰好调用一次；握手拒绝不会停止后续调用。
+
+批量 ARG、RESP 和握手返回值按事务维度在原有类型外侧叠加 `std::array`。ARG 数组按值传递，在入口取得输入副本；RESP 数组按引用传递。实参表达式只求值一次，不支持标量广播。非握手批量调用返回 `void`，无参数事务也可直接裸调用；布尔结果数组不能直接用于 `if` 条件。
+
+### SERVICE(name, handshake=0, ready=cond, priority=prio, array=N / dims=[...], ARG(...), RESP(...)) { ... }
 
 定义服务事务端口：
 
@@ -399,7 +425,8 @@ SERVICE(write, priority=1, ARG(uint8_t) data) {
 - `handshake`：是否包含 valid-ready 握手，默认 `0`。
 - `ready`：握手 ready 条件。提供 `ready` 时等价于 `handshake=1`；如果显式写 `handshake=1`，必须提供 `ready`。
 - `priority`：服务逻辑块的周期内执行顺序。值越大越先执行；正值在 Tick 前，负值在 Tick 后，Tick 的值为 0。同值之间不保证顺序。
-- `array`：阵列化服务端口数量。
+- `array`／`dims`：服务端口阵列形状，必须与相连 REQUEST 的形状一致。
+- `IDX`：当前服务端口的扁平编号；`IDX_DIM(d)`：第 `d` 维坐标，可用于实现和 ready 表达式。`d` 必须是合法的静态维度表达式。SERVICE 不增加批量调用接口。
 - `ARG/RESP`：端口参数列表。
 - `{ ... }`：事务成功触发时执行的逻辑。
 

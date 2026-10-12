@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "apiinline/request.hpp"
+#include "port_shape.h"
 
 #include "apiinline/utils.hpp"
 
@@ -62,7 +63,7 @@ bool parseRequestCall(
     int &close_idx
 ) {
     int cursor = name_idx + 1;
-    idx_expr = "0";
+    idx_expr.clear();
     if (cursor < static_cast<int>(tokens.size()) && tokens[cursor].spelling == "<") {
         // A comparison inside a parenthesized non-type argument is not the closing angle.
         int close_angle = -1;
@@ -82,6 +83,7 @@ bool parseRequestCall(
         if (cursor + 1 <= close_angle - 1) {
             idx_expr = sourceBetween(code, tokens[cursor + 1], tokens[close_angle - 1]);
         }
+        if (idx_expr.empty()) idx_expr = " ";
         cursor = close_angle + 1;
     }
     if (cursor >= static_cast<int>(tokens.size()) || tokens[cursor].spelling != "(") {
@@ -151,7 +153,7 @@ string requestHelperDef(const RequestInfo &info) {
     const auto &req = *info.req;
     std::ostringstream os;
     if (req.is_arrayed) {
-        os << "template <uint32_t IDX = 0>\n";
+        os << "template <uint32_t IDX>\n";
     }
     os << (req.has_handshake ? "bool " : "void ") << info.helper_name << "(";
     bool need_comma = false;
@@ -175,6 +177,10 @@ string requestHelperDef(const RequestInfo &info) {
     }
     emitRequestBody(os, info, req.is_arrayed ? "IDX" : "0", arg_names);
     os << "}\n";
+    if (req.is_arrayed) {
+        os << portArrayType(req.returnType(), req.port_dims) << " " << info.helper_name << "__bulk(" << portBulkArguments(req) << ") {\n";
+        os << portBulkBody(req, info.helper_name) << "}\n";
+    }
     return os.str();
 }
 
@@ -218,7 +224,8 @@ string requestCallExpr(const RequestInfo &info, const string &idx_expr, const ve
     std::ostringstream os;
     os << info.helper_name;
     if (req.is_arrayed) {
-        os << "<" << idx_expr << ">";
+        if (idx_expr.empty()) os << "__bulk";
+        else os << "<" << portIndexExpression(idx_expr, req.port_dims) << ">";
     }
     os << "(";
     bool need_comma = false;
@@ -261,13 +268,26 @@ InlineCode inlineRequestAPIs(
         }
         requests[name] = std::move(info);
     }
-    if (requests.empty()) {
+    if (requests.empty() && module.child_service_shapes.empty()) {
         return {logic_hls_codes, logic_hls_debug};
     }
 
     string code = joinLines(logic_hls_codes);
     vector<TokenInfo> tokens = tokenizeWithLibclang(code);
     vector<Replacement> repls;
+    for (const auto &[name, dims] : module.child_service_shapes) {
+        if (dims.empty()) continue;
+        for (int i = 0; i < static_cast<int>(tokens.size()); ++i) {
+            if (tokens[i].spelling != name || tokens[i].kind != CXToken_Identifier) continue;
+            string coordinates; vector<string> args; int close = -1;
+            if (!parseRequestCall(code, tokens, i, coordinates, args, close)) continue;
+            string target = coordinates.empty() ? "__vul_bulk_" + name : portFlatName(name) + "<" + portIndexExpression(coordinates, dims) + ">";
+            target += "(";
+            for (size_t a = 0; a < args.size(); ++a) { if (a) target += ", "; target += args[a]; }
+            target += ")";
+            repls.push_back({tokens[i].start, tokens[close].end, target});
+        }
+    }
     string helper_defs;
     const size_t logic_func_pos = findLogicSubmoduleFunctionStart(code);
     for (const auto &[name, info] : requests) {

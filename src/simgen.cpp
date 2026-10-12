@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "simgen.h"
+#include "port_shape.h"
 #include "instance_graph.h"
 #include <set>
 #include "debugmap.hpp"
@@ -298,13 +299,15 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
         string argnames = req.signatureArgNameList();
         string arglists = req.signatureArgOnly();
         const bool is_arrayed = req.is_arrayed;
+        const string callname = is_arrayed ? portFlatName(req_entry.first) : req_entry.first;
 
         if (is_arrayed) {
-            decl_private_field.push_back("template <uint32_t IDX = 0>\n");
-            decl_private_field.push_back(rettype + " " + req_entry.first + "(" + arglists + ");\n");
+            decl_private_field.push_back("template <uint32_t IDX>\n");
+            decl_private_field.push_back(rettype + " " + callname + "(" + arglists + ");\n");
         } else {
-            decl_private_field.push_back(rettype + " " + req_entry.first + "(" + arglists + ");\n");
+            decl_private_field.push_back(rettype + " " + callname + "(" + arglists + ");\n");
         }
+        decl_private_field.push_back(portRequestFacade(req));
         decl_private_field.push_back("\n");
 
         string call_prefix = (rettype == "void" ? "" : "return ");
@@ -313,10 +316,10 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
         wrapper_prefix_args += argnames;
         if (is_arrayed) {
             impl_field.push_back("template <uint32_t IDX>\n");
-            impl_field.push_back(rettype + " " + mod_class_name + "::" + req_entry.first + "(" + arglists + ") {\n");
+            impl_field.push_back(rettype + " " + mod_class_name + "::" + callname + "(" + arglists + ") {\n");
             impl_field.push_back(CodeTab + call_prefix + wrapper_name + "<IDX>(" + wrapper_prefix_args + ");\n");
         } else {
-            impl_field.push_back(rettype + " " + mod_class_name + "::" + req_entry.first + "(" + arglists + ") {\n");
+            impl_field.push_back(rettype + " " + mod_class_name + "::" + callname + "(" + arglists + ") {\n");
             impl_field.push_back(CodeTab + call_prefix + wrapper_name + "(" + wrapper_prefix_args + ");\n");
         }
         impl_field.push_back("}\n");
@@ -352,6 +355,15 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
             decl_public_field.push_back(rettype + " " + serv_entry.first + "(" + arglists + ");\n");
         }
 
+        if (serv.port_dims.size() > 1) {
+            string facade = portRequestFacade(serv);
+            facade.erase(facade.find("}\n") + 2);
+            const string flat = portFlatName(serv.name);
+            size_t pos = facade.find(flat);
+            if (pos != string::npos) facade.replace(pos, flat.size(), serv.name);
+            decl_public_field.push_back(facade);
+        }
+
         // implemented by logic block, or connented to child module's service
         auto lb_iter = mod.serv_logic_blocks.find(serv_entry.first);
         if (lb_iter != mod.serv_logic_blocks.end()) {
@@ -367,7 +379,7 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
                     impl_field.push_back(CodeTab + "assert(!" + call_guard_name + " && \"" + service_assert_msg + "\");\n");
                     impl_field.push_back(CodeTab + call_guard_name + " = true;\n");
                 }
-                vulDebugAppendLines(impl_field, impl_field_debug, lb_iter->second.codelines, lb_iter->second.codelines_debug);
+                vulDebugAppendLines(impl_field, impl_field_debug, lowerPortIndexDims(lb_iter->second.codelines, serv.port_dims, mod.connection_config), lb_iter->second.codelines_debug);
                 impl_field.push_back("}\n");
             } else {
                 if (is_arrayed) {
@@ -405,14 +417,14 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
                     impl_field.push_back("template <uint32_t IDX>\n");
                 }
                 impl_field.push_back("bool " + mod_class_name + "::__cond_" + serv_entry.first + "(" + arglists + ") {\n");
-                vulDebugAppendLines(impl_field, impl_field_debug, lb_iter->second.cond_codelines, lb_iter->second.cond_codelines_debug);
+                vulDebugAppendLines(impl_field, impl_field_debug, lowerPortIndexDims(lb_iter->second.cond_codelines, serv.port_dims, mod.connection_config), lb_iter->second.cond_codelines_debug);
                 impl_field.push_back("}\n");
 
                 if (is_arrayed) {
                     impl_field.push_back("template <uint32_t IDX>\n");
                 }
                 impl_field.push_back("void " + mod_class_name + "::__impl_" + serv_entry.first + "(" + arglists + ") {\n");
-                vulDebugAppendLines(impl_field, impl_field_debug, lb_iter->second.codelines, lb_iter->second.codelines_debug);
+                vulDebugAppendLines(impl_field, impl_field_debug, lowerPortIndexDims(lb_iter->second.codelines, serv.port_dims, mod.connection_config), lb_iter->second.codelines_debug);
                 impl_field.push_back("}\n");
             }
         }
@@ -455,7 +467,7 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
 
         decl_public_field.push_back(query.ret_type.toString() + " " + query_name + "() const;\n");
         impl_field.push_back(query.ret_type.toString() + " " + mod_class_name + "::" + query_name + "() const {\n");
-        vulDebugAppendLines(impl_field, impl_field_debug, lb_iter->second.codelines, lb_iter->second.codelines_debug);
+        vulDebugAppendLines(impl_field, impl_field_debug, lowerPortIndexDims(lb_iter->second.codelines, {}, mod.connection_config), lb_iter->second.codelines_debug);
         impl_field.push_back("}\n");
         impl_field.push_back("\n");
     }
@@ -613,7 +625,7 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
                 const bool request = conn.serv_instance.empty() && target.requests.contains(conn.serv_name);
                 const auto &dst = request ? target.requests.at(conn.serv_name) : target.services.at(conn.serv_name);
                 string call = conn.serv_instance.empty() ? "" : childPtrFieldName(mod, conn.serv_instance) + "->";
-                call += conn.serv_name;
+                call += request && dst.is_arrayed ? portFlatName(conn.serv_name) : conn.serv_name;
                 if (dst.is_arrayed) call += "<" + (conn.serv_port_index >= 0 ? std::to_string(conn.serv_port_index) : (req.is_arrayed ? "IDX" : "0")) + ">";
                 decl_public_field.push_back((rettype == "void" ? "" : "return ") + call + "(" + req.signatureArgNameList() + ");\n");
                 if (guarded) decl_public_field.push_back("}\n");
@@ -642,10 +654,14 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
         string arglists = serv.signatureArgOnly();
         string argname = serv.signatureArgNameList();
         const bool is_alias_arrayed = group.front().alias_indexed;
+        auto alias_port = serv;
+        alias_port.name = alias_name; alias_port.port_dims = mod.child_service_shapes.at(alias_name);
+        alias_port.is_arrayed = is_alias_arrayed; alias_port.array_size = group.size();
+        const string callname = is_alias_arrayed ? portFlatName(alias_name) : alias_name;
         if (is_alias_arrayed) {
-            decl_private_field.push_back("template <uint32_t IDX = 0>\n");
+            decl_private_field.push_back("template <uint32_t IDX>\n");
         }
-        decl_private_field.push_back(rettype + " " + alias_name + "(" + arglists + ") {\n");
+        decl_private_field.push_back(rettype + " " + callname + "(" + arglists + ") {\n");
         string call_prefix = (rettype == "void" ? "" : "return ");
         if (!is_alias_arrayed) {
             decl_private_field.push_back(CodeTab + call_prefix + childPtrFieldName(mod, group.front().instance_name) + "->" + group.front().service_name + "(" + argname + ");\n");
@@ -655,11 +671,12 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
                 const auto &use = group[i];
                 string branch = (i == 0 ? "if constexpr" : "else if constexpr");
                 decl_private_field.push_back(CodeTab + branch + " (IDX == " + std::to_string(use.alias_index) + ") {\n");
-                decl_private_field.push_back(CodeTab + CodeTab + call_prefix + childPtrFieldName(mod, use.instance_name) + "->" + use.service_name + "(" + argname + ");\n");
+                decl_private_field.push_back(CodeTab + CodeTab + call_prefix + childPtrFieldName(mod, use.instance_name) + "->" + use.service_name + (serv.is_arrayed ? "<" + std::to_string(use.service_port_index) + ">" : "") + "(" + argname + ");\n");
                 decl_private_field.push_back(CodeTab + "}\n");
             }
         }
         decl_private_field.push_back("}\n");
+        decl_private_field.push_back(portRequestFacade(alias_port));
     }
 
     std::map<string, vector<VulStaticChildQueryUse>> child_query_groups;
@@ -969,11 +986,13 @@ StaticTestHarnessCodeHpp genStaticTestHarnessCodeHpp(
         string rettype = req.returnType();
         string argnames = req.signatureArgNameList();
         string arglists = req.signatureArgOnly();
-        const bool is_arrayed = !req.array_size.empty();
+        const auto &port = top_module.services.at(req_entry.first);
+        const bool is_arrayed = port.is_arrayed;
+        const string callname = is_arrayed ? portFlatName(req_entry.first) : req_entry.first;
         if (is_arrayed) {
-            member_field.push_back("template <uint32_t IDX = 0>\n");
+            member_field.push_back("template <uint32_t IDX>\n");
         }
-        member_field.push_back(rettype + " " + req_entry.first + "(" + arglists + ") {\n");
+        member_field.push_back(rettype + " " + callname + "(" + arglists + ") {\n");
         string return_prefix = (rettype == "void" ? "" : "return ");
         if (is_arrayed) {
             member_field.push_back(CodeTab + return_prefix + child_instptr_name + "->" + req_entry.first + "<IDX>(" + argnames + ");\n");
@@ -981,6 +1000,7 @@ StaticTestHarnessCodeHpp genStaticTestHarnessCodeHpp(
             member_field.push_back(CodeTab + return_prefix + child_instptr_name + "->" + req_entry.first + "(" + argnames + ");\n");
         }
         member_field.push_back("}\n");
+        member_field.push_back(portRequestFacade(port));
         member_field.push_back("\n");
     }
 
@@ -1007,7 +1027,8 @@ StaticTestHarnessCodeHpp genStaticTestHarnessCodeHpp(
         string rettype = serv.returnType();
         string argnames = serv.signatureArgNameList();
         string arglists = serv.signatureArgOnly();
-        const bool is_arrayed = !serv.array_size.empty();
+        const auto &resolved = top_module.requests.at(serv_name);
+        const bool is_arrayed = resolved.is_arrayed;
 
         if (is_arrayed) {
             public_member_field.push_back("template <uint32_t IDX = 0>\n");
@@ -1035,14 +1056,14 @@ StaticTestHarnessCodeHpp genStaticTestHarnessCodeHpp(
             member_field.push_back("template <uint32_t IDX = 0>\n");
         }
         member_field.push_back("void __impl_" + serv_name + "(" + arglists + ") {\n");
-        vulDebugAppendLines(member_field, member_field_debug, serv.codelines, serv.codelines_debug);
+        vulDebugAppendLines(member_field, member_field_debug, lowerPortIndexDims(serv.codelines, resolved.port_dims, top_module.connection_config), serv.codelines_debug);
         member_field.push_back("}\n");
         if (serv.has_handshake) {
             if (is_arrayed) {
                 member_field.push_back("template <uint32_t IDX = 0>\n");
             }
             member_field.push_back("bool __cond_" + serv_name + "(" + arglists + ") {\n");
-            vulDebugAppendLine(member_field, member_field_debug, "return (" + serv.cond + ");\n", serv.cond_debug);
+            vulDebugAppendLine(member_field, member_field_debug, "return (" + lowerPortIndexDims(serv.cond, resolved.port_dims, top_module.connection_config) + ");\n", serv.cond_debug);
             member_field.push_back("}\n");
         }
     }

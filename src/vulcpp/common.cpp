@@ -160,12 +160,22 @@ bool parseReqServAttribute(
     const string &key = attr->first;
     const string &value = attr->second;
 
+    if (key == "dims") {
+        if (!options.allow_array) throw VulException(macro_name + " does not support dims");
+        if (!reqserv.array_size.empty() || !reqserv.port_dims.empty())
+            throw VulException(macro_name + " dims and array cannot be combined or repeated");
+        if (trim(value).empty() || trim(value).front() != '[' || trim(value).back() != ']')
+            throw VulException(macro_name + " dims requires a nonempty dimension list");
+        appendDimList(reqserv.port_dims, value);
+        if (reqserv.port_dims.empty()) throw VulException("Empty transaction dims");
+        return true;
+    }
     if (key == "array") {
         if (!options.allow_array) {
             throw VulException(macro_name + " does not support attribute 'array'");
         }
         ensureAttrValue(macro_name, key, value);
-        if (!reqserv.array_size.empty()) {
+        if (!reqserv.array_size.empty() || !reqserv.port_dims.empty()) {
             throw VulException(macro_name + " array size is specified more than once");
         }
         reqserv.array_size = trim(value);
@@ -211,7 +221,7 @@ void parseReqArgsAndRets(
         const string &arg_decl_raw = macro_args[i];
         const string arg_decl = trim(arg_decl_raw);
         if (arg_decl.size() > 7 && arg_decl.rfind("ARRAY(", 0) == 0 && arg_decl.back() == ')') {
-            if (!reqserv.array_size.empty()) {
+            if (!reqserv.array_size.empty() || !reqserv.port_dims.empty()) {
                 throw VulException(macro_name + " array size is specified more than once");
             }
             reqserv.array_size = trim(arg_decl.substr(6, arg_decl.size() - 7));
