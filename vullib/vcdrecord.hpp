@@ -36,13 +36,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <span>
 #include <vector>
 
 /**
  * 工作流程为：
 （1）构造后进入注册阶段，提供函数接口registe，用于以一个信号名和信号宽度注册一个待记录的信号，返回一个uint32_t类型的信号ID。
 （2）注册完成后，提供函数接口init，接受文件名、周期时间、写文件间隔参数，进入记录阶段。
-（3）在记录阶段，提供函数接口record，接受一个信号ID和一个uint64_t信号值（宽度小于等于64）或vector<uint64_t>信号值（宽度大于64），记录该信号在当前时间点的变化。
+（3）在记录阶段，提供函数接口record，接受一个信号ID和一个uint64_t信号值（宽度小于等于64）或span<const uint64_t>信号值（宽度大于64），并保留vector<uint64_t>兼容接口，记录该信号在当前时间点的变化。
 （4）在记录阶段，提供函数接口commit，表示当前周期结束，所有在当前周期内记录的信号变化将确定并提交入缓冲区。如果给出了写文件间隔参数，并且当前周期数达到了写文件间隔的倍数，则将缓冲区中的内容写入vcd文件。
 （5）提供函数接口close，结束记录阶段，关闭文件并清理资源。
  */
@@ -168,6 +169,10 @@ public:
     }
 
     void record(uint32_t signal_id, const std::vector<uint64_t> &signal_value) {
+        record(signal_id, std::span<const uint64_t>(signal_value));
+    }
+
+    void record(uint32_t signal_id, std::span<const uint64_t> signal_value) {
         ensure_state(State::Recording, "record");
         SignalInfo &sig = get_signal(signal_id);
         const uint32_t words = (sig.width + 63U) / 64U;
@@ -337,7 +342,7 @@ private:
         return bits;
     }
 
-    std::string to_bits(const std::vector<uint64_t> &words, uint32_t width) const {
+    std::string to_bits(std::span<const uint64_t> words, uint32_t width) const {
         const uint32_t need_words = (width + 63U) / 64U;
         std::string bits;
         bits.reserve(width);

@@ -46,8 +46,12 @@ void trace_record(uint32_t signal_id, uint64_t signal_value) {
     global_vcd_record.record(signal_id, signal_value);
 }
 
-void trace_record(uint32_t signal_id, const std::vector<uint64_t> &signal_value) {
+void trace_record(uint32_t signal_id, std::span<const uint64_t> signal_value) {
     global_vcd_record.record(signal_id, signal_value);
+}
+
+void trace_record(uint32_t signal_id, const std::vector<uint64_t> &signal_value) {
+    trace_record(signal_id, std::span<const uint64_t>(signal_value));
 }
 
 void trace_commit() {

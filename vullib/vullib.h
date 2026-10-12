@@ -28,6 +28,7 @@
 #include "queue.hpp"
 
 #include <string>
+#include <span>
 #include <vector>
 #include <cassert>
 
@@ -49,6 +50,8 @@ void trace_set_break_history_cycles(uint64_t cycle_count);
 void trace_add_break_point(const std::vector<TraceBreakConditionSpec> &conditions, const std::string &expr_text);
 
 void trace_record(uint32_t signal_id, uint64_t signal_value);
+
+void trace_record(uint32_t signal_id, std::span<const uint64_t> signal_value);
 
 void trace_record(uint32_t signal_id, const std::vector<uint64_t> &signal_value);
 
