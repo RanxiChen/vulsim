@@ -49,7 +49,7 @@
 - `frontExpr(...)`：生成 `front` 读取表达式。
 - `frontAssignBlock(...)`：将多出队 `front()` 的整数组赋值改写为逐元素赋值。
 - `frontHelper(...)`：生成队列 `front` 返回值的文件级 helper。
-- `queuePortHelpers(...)`：生成 ready/valid、enq/deq 和 clear 的文件级 helper，直接访问新 ABI 的全局端口变量。
+- `queuePortHelpers(...)`：生成 ready/valid、enq/deq 和 clear 的文件级 helper，直接访问新 ABI 的全局端口变量；多端口计数按 RTL 原生位宽读取后扩展为 API 的 `uint32_t`。
 - `deqNextBlock(...)`：生成 `deqnext` 对出队 ready 端口的赋值代码。
 
 ## src/apiinline/queue.hpp
@@ -325,7 +325,7 @@
 | `registers.cpp` | `_procRegisters`；寄存器端口、RTL 实例、零初始化及用户复位块。 |
 | `transactions.cpp` | `_procRequests`、`_procServicesAndTicks`、`_procQueries`；事务端口、逻辑入口及 priority。 |
 | `connections.cpp` | `_procChildrenAndConnection`；子模块线网、Service／Query 引出与转发。 |
-| `queues.cpp` | `_procQueues`；Queue／QueueMP 端口及 RTL 实例。 |
+| `queues.cpp` | `_procQueues`；Queue／QueueMP 端口及 RTL 实例，计数输入使用硬件计数位宽。 |
 | `memories.cpp` | `_procBRAMAndROM`；存储器端口、实例及 ROM 资源文件。 |
 | `verilator.cpp` | `genVerilatorTestMainCpp`；测试绑定、数组事务与复位，宽端口按 Verilator 存储布局转换。 |
 | `common.hpp` / `common.cpp` | `ArgPort`、端口命名、字段表达式和参数展平；仅声明跨文件辅助接口。 |
@@ -480,6 +480,15 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 
 **主要函数/类型**
 - `getVulLibFiles()`：返回 runtime 头文件和资源文件列表。
+
+## src/vulcpp/declaration_args.cpp / declaration_args.hpp
+
+**文件功能**：声明 API 的共享参数规格与归一化入口。
+
+- `normalizeDeclaration(...)`：统一名称／类型／属性的固定顺序及显式命名，拒绝重复参数、位置／命名混用错误、旧宏和同义属性；输出处理器所需的位置前缀与命名属性，保留隐式握手和原始源码位置。
+- 全局 header、模块、版本化接口／实现、测试入口与 TOP／PROJECT 路径扫描共享该入口；`common.cpp` 负责顶层赋值识别与方括号维度列表校验。
+- 用户语法以 `doc/userguide/0-declarations.md` 为参数表；`vullib/defhelper.hpp` 仅覆盖基础位置写法的编辑期类型辅助。
+- `regression/declaration_api.py` 验证参数语法、移除诊断及 C++20 编辑期声明；`regression/generator_declaration_api.py` 验证完整生成流程。
 
 ## src/vulcpp/project_parser.cpp
 

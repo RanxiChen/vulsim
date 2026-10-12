@@ -12,7 +12,7 @@
 TOP("./AES1.hpp");
 PROJECT(".");
 
-REQUEST_READY(input, ARG(AESData) data, ARG(AESKey) key);
+REQUEST(input, handshake=true, ARG(AESData) data, ARG(AESKey) key);
 
 GLOBAL() {
     struct AESTestVector {

@@ -92,12 +92,8 @@ public:
             auto attr = parseKeyValueArg(entry.args[i]);
             if (isAttrKey(attr, "dims")) {
                 appendDimList(alias_member.dims, attr->second);
-            } else if (isAttrKey(attr, "dim")) {
-                appendDimList(alias_member.dims, attr->second);
             } else if (attr) {
                 throw VulException("ALIAS has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-            } else {
-                alias_member.dims.push_back(entry.args[i]);
             }
         }
         bundle.members.push_back(std::move(alias_member));
@@ -105,53 +101,7 @@ public:
     }
 };
 
-class VCPPModuleALIAS_ARRAY1 : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "ALIAS_ARRAY1"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() != 3) {
-            throw VulException("ALIAS_ARRAY1 requires exactly 3 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempBundle bundle;
-        bundle.name = entry.args[0];
-        bundle.is_alias = true;
-        context.declareName(bundle.name, "ALIAS_ARRAY1", entry);
-        VulTempBundleMember alias_member;
-        alias_member.name = "target";
-        alias_member.type = entry.args[1];
-        for (size_t i = 2; i < entry.args.size(); ++i) {
-            alias_member.dims.push_back(entry.args[i]);
-        }
-        bundle.members.push_back(std::move(alias_member));
-        context.temp.bundles.push_back(std::move(bundle));
-    }
-};
-
-class VCPPModuleALIAS_ARRAY2 : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "ALIAS_ARRAY2"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() != 4) {
-            throw VulException("ALIAS_ARRAY2 requires exactly 4 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempBundle bundle;
-        bundle.name = entry.args[0];
-        bundle.is_alias = true;
-        context.declareName(bundle.name, "ALIAS_ARRAY2", entry);
-        VulTempBundleMember alias_member;
-        alias_member.name = "target";
-        alias_member.type = entry.args[1];
-        for (size_t i = 2; i < entry.args.size(); ++i) {
-            alias_member.dims.push_back(entry.args[i]);
-        }
-        bundle.members.push_back(std::move(alias_member));
-        context.temp.bundles.push_back(std::move(bundle));
-    }
-};
-
 static VCPPModuleAutoRegisterHandler<VCPPModuleALIAS> _auto_register_ALIAS_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleALIAS_ARRAY1> _auto_register_ALIAS_ARRAY1_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleALIAS_ARRAY2> _auto_register_ALIAS_ARRAY2_handler;
 
 class VCPPModuleSTRUCT : public VCPPModuleHandler {
 public:
@@ -231,92 +181,17 @@ public:
         reg.name = entry.args[0];
         reg.type = entry.args[1];
         context.declareName(reg.name, "REGISTER", entry);
-        bool saw_positional_port = false;
-        if (entry.args.size() >= 3) {
-            for (size_t i = 2; i < entry.args.size(); ++i) {
-                auto attr = parseKeyValueArg(entry.args[i]);
-                if (isAttrKey(attr, "ports") || isAttrKey(attr, "portnum")) {
-                    if (!reg.portnum.empty()) {
-                        throw VulException("REGISTER port count is specified more than once at " + context.getOriginalPosition(entry.pos));
-                    }
-                    ensureAttrValue("REGISTER", attr->first, attr->second);
-                    reg.portnum = trim(attr->second);
-                } else if (isAttrKey(attr, "dims") || isAttrKey(attr, "dim")) {
-                    appendDimList(reg.dims, attr->second);
-                } else if (attr) {
-                    throw VulException("REGISTER has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-                } else if (!saw_positional_port && reg.portnum.empty()) {
-                    reg.portnum = entry.args[i];
-                    saw_positional_port = true;
-                } else {
-                    reg.dims.push_back(entry.args[i]);
-                }
-            }
+        for (size_t i = 2; i < entry.args.size(); ++i) {
+            const auto attr = parseKeyValueArg(entry.args[i]);
+            if (attr->first == "ports") reg.portnum = attr->second;
+            else if (attr->first == "dims") appendDimList(reg.dims, attr->second);
         }
-        reg.reset_codelines = entry.body;
-        reg.reset_codelines_debug = context.bodyDebugLocs(entry);
-        context.temp.registers.push_back(std::move(reg));
-    }
-};
-class VCPPModuleREGISTER_MUL : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "REGISTER_MUL"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 3) {
-            throw VulException("REGISTER_MUL requires at least 3 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempRegister reg;
-        reg.name = entry.args[0];
-        reg.type = entry.args[1];
-        context.declareName(reg.name, "REGISTER_MUL", entry);
-        bool saw_port = false;
-        for (size_t i = 3; i < entry.args.size(); ++i) {
-            auto attr = parseKeyValueArg(entry.args[i]);
-            if (isAttrKey(attr, "dims") || isAttrKey(attr, "dim")) {
-                appendDimList(reg.dims, attr->second);
-            } else if (attr) {
-                throw VulException("REGISTER_MUL has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-            } else {
-                reg.dims.push_back(entry.args[i]);
-            }
-        }
-        auto port_attr = parseKeyValueArg(entry.args[2]);
-        if (isAttrKey(port_attr, "ports") || isAttrKey(port_attr, "portnum")) {
-            ensureAttrValue("REGISTER_MUL", port_attr->first, port_attr->second);
-            reg.portnum = trim(port_attr->second);
-            saw_port = true;
-        } else if (port_attr) {
-            throw VulException("REGISTER_MUL has unknown attribute '" + port_attr->first + "' at " + context.getOriginalPosition(entry.pos));
-        }
-        if (!saw_port) {
-            reg.portnum = entry.args[2];
-        }
-        reg.reset_codelines = entry.body;
-        reg.reset_codelines_debug = context.bodyDebugLocs(entry);
-        context.temp.registers.push_back(std::move(reg));
-    }
-};
-class VCPPModuleREGISTER_ARRAY1 : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "REGISTER_ARRAY1"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() != 4) {
-            throw VulException("REGISTER_ARRAY1 requires exactly 4 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempRegister reg;
-        reg.name = entry.args[0];
-        reg.type = entry.args[1];
-        context.declareName(reg.name, "REGISTER_ARRAY1", entry);
-        reg.portnum = entry.args[3];
-        reg.dims.push_back(entry.args[2]);
         reg.reset_codelines = entry.body;
         reg.reset_codelines_debug = context.bodyDebugLocs(entry);
         context.temp.registers.push_back(std::move(reg));
     }
 };
 static VCPPModuleAutoRegisterHandler<VCPPModuleREGISTER> _auto_register_REGISTER_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleREGISTER_MUL> _auto_register_REGISTER_MUL_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleREGISTER_ARRAY1> _auto_register_REGISTER_ARRAY1_handler;
 
 class VCPPModuleWIRE : public VCPPModuleHandler {
 public:
@@ -350,7 +225,7 @@ public:
         VulErrorContextGuard _err{"Processing REQUEST '" + req.name + "' at " + context.getOriginalPosition(entry.pos)};
         ReqServParseOptions options;
         options.allow_handshake = true;
-        options.allow_array = true;
+        options.allow_dims = true;
         parseReqArgsAndRets(entry.args, 1, req, &options, "REQUEST");
         if (options.handshake.has_value()) {
             req.has_handshake = *options.handshake;
@@ -359,26 +234,7 @@ public:
     }
 };
 
-class VCPPModuleREQUEST_READY : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "REQUEST_READY"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.empty()) {
-            throw VulException("REQUEST_READY requires at least 1 argument at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempReq req;
-        req.name = entry.args[0];
-        req.has_handshake = true;
-        context.declareName(req.name, "REQUEST_READY", entry);
-        VulErrorContextGuard _err{"Processing REQUEST_READY '" + req.name + "' at " + context.getOriginalPosition(entry.pos)};
-        ReqServParseOptions options;
-        options.allow_array = true;
-        parseReqArgsAndRets(entry.args, 1, req, &options, "REQUEST_READY");
-        context.temp.requests.push_back(std::move(req));
-    }
-};
 static VCPPModuleAutoRegisterHandler<VCPPModuleREQUEST> _auto_register_REQUEST_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleREQUEST_READY> _auto_register_REQUEST_READY_handler;
 
 class VCPPModuleSERVICE : public VCPPModuleHandler {
 public:
@@ -404,7 +260,7 @@ public:
         options.allow_handshake = true;
         options.allow_ready = true;
         options.allow_priority = true;
-        options.allow_array = true;
+        options.allow_dims = true;
         parseReqArgsAndRets(entry.args, 1, serv, &options, "SERVICE");
         if (options.handshake.has_value()) {
             serv.has_handshake = *options.handshake;
@@ -430,80 +286,7 @@ public:
     }
 };
 
-class VCPPModuleSERVICE_READY : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "SERVICE_READY"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 2) {
-            throw VulException("SERVICE_READY requires at least 2 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempServ serv;
-        serv.name = entry.args[0];
-        serv.has_handshake = true;
-        context.declareName(serv.name, "SERVICE_READY", entry);
-        serv.cond = entry.args[1];
-        serv.cond_debug = context.toDebugLoc(entry.pos);
-        serv.priority = "";
-        serv.codelines = entry.body;
-        serv.codelines_debug = context.bodyDebugLocs(entry);
-        VulErrorContextGuard _err{"Processing SERVICE_READY '" + serv.name + "' at " + context.getOriginalPosition(entry.pos)};
-        ReqServParseOptions options;
-        options.allow_array = true;
-        parseReqArgsAndRets(entry.args, 2, serv, &options, "SERVICE_READY");
-        context.temp.services.push_back(std::move(serv));
-    }
-};
-
-class VCPPModuleSERVICE_PRIO : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "SERVICE_PRIO"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 2) {
-            throw VulException("SERVICE_PRIO requires at least 2 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempServ serv;
-        serv.name = entry.args[0];
-        serv.has_handshake = false;
-        context.declareName(serv.name, "SERVICE_PRIO", entry);
-        serv.cond = "";
-        serv.priority = entry.args[1];
-        serv.codelines = entry.body;
-        serv.codelines_debug = context.bodyDebugLocs(entry);
-        VulErrorContextGuard _err{"Processing SERVICE_PRIO '" + serv.name + "' at " + context.getOriginalPosition(entry.pos)};
-        ReqServParseOptions options;
-        options.allow_array = true;
-        parseReqArgsAndRets(entry.args, 2, serv, &options, "SERVICE_PRIO");
-        context.temp.services.push_back(std::move(serv));
-    }
-};
-
-class VCPPModuleSERVICE_PRIO_READY : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "SERVICE_PRIO_READY"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 3) {
-            throw VulException("SERVICE_PRIO_READY requires at least 3 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempServ serv;
-        serv.name = entry.args[0];
-        serv.has_handshake = true;
-        context.declareName(serv.name, "SERVICE_PRIO_READY", entry);
-        serv.priority = entry.args[1];
-        serv.cond = entry.args[2];
-        serv.cond_debug = context.toDebugLoc(entry.pos);
-        serv.codelines = entry.body;
-        serv.codelines_debug = context.bodyDebugLocs(entry);
-        VulErrorContextGuard _err{"Processing SERVICE_PRIO_READY '" + serv.name + "' at " + context.getOriginalPosition(entry.pos)};
-        ReqServParseOptions options;
-        options.allow_array = true;
-        parseReqArgsAndRets(entry.args, 3, serv, &options, "SERVICE_PRIO_READY");
-        context.temp.services.push_back(std::move(serv));
-    }
-};
 static VCPPModuleAutoRegisterHandler<VCPPModuleSERVICE> _auto_register_SERVICE_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleSERVICE_READY> _auto_register_SERVICE_READY_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleSERVICE_PRIO> _auto_register_SERVICE_PRIO_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleSERVICE_PRIO_READY> _auto_register_SERVICE_PRIO_READY_handler;
 
 class VCPPModuleQUERY : public VCPPModuleHandler {
 public:
@@ -568,7 +351,7 @@ public:
             if (!attr) {
                 throw VulException("invalid parameter override '" + param_override_raw + "' at " + context.getOriginalPosition(entry.pos));
             }
-            if (attr->first == "dims" || attr->first == "dim") {
+            if (attr->first == "dims") {
                 appendDimList(inst.array_dims, attr->second);
                 continue;
             }
@@ -579,74 +362,6 @@ public:
 };
 static VCPPModuleAutoRegisterHandler<VCPPModuleCHILD_INSTANCE> _auto_register_CHILD_INSTANCE_handler;
 
-class VCPPModuleCHILD_INSTANCE_ARRAY1 : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "CHILD_INSTANCE_ARRAY1"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 3) {
-            throw VulException("CHILD_INSTANCE_ARRAY1 requires at least 3 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempInstance inst;
-        inst.name = entry.args[1];
-        inst.module_name = entry.args[0];
-        context.declareName(inst.name, "CHILD_INSTANCE_ARRAY1", entry);
-        inst.array_dims.push_back(entry.args[2]);
-        for (size_t i = 3; i < entry.args.size(); ++i) {
-            const string &param_override_raw = entry.args[i];
-            const size_t split_pos = param_override_raw.find('=');
-            if (split_pos == string::npos) {
-                throw VulException("invalid parameter override '" + param_override_raw + "' at " + context.getOriginalPosition(entry.pos));
-            }
-            appendInstanceParameter(inst, param_override_raw, "CHILD_INSTANCE_ARRAY1");
-        }
-        context.temp.instances.push_back(std::move(inst));
-    }
-};
-static VCPPModuleAutoRegisterHandler<VCPPModuleCHILD_INSTANCE_ARRAY1> _auto_register_CHILD_INSTANCE_ARRAY1_handler;
-
-class VCPPModuleCHILD_INSTANCE_ARRAY2 : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "CHILD_INSTANCE_ARRAY2"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 4) {
-            throw VulException("CHILD_INSTANCE_ARRAY2 requires at least 4 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempInstance inst;
-        inst.name = entry.args[1];
-        inst.module_name = entry.args[0];
-        context.declareName(inst.name, "CHILD_INSTANCE_ARRAY2", entry);
-        inst.array_dims.push_back(entry.args[2]);
-        inst.array_dims.push_back(entry.args[3]);
-        for (size_t i = 4; i < entry.args.size(); ++i) {
-            const string &param_override_raw = entry.args[i];
-            const size_t split_pos = param_override_raw.find('=');
-            if (split_pos == string::npos) {
-                throw VulException("invalid parameter override '" + param_override_raw + "' at " + context.getOriginalPosition(entry.pos));
-            }
-            appendInstanceParameter(inst, param_override_raw, "CHILD_INSTANCE_ARRAY2");
-        }
-        context.temp.instances.push_back(std::move(inst));
-    }
-};
-static VCPPModuleAutoRegisterHandler<VCPPModuleCHILD_INSTANCE_ARRAY2> _auto_register_CHILD_INSTANCE_ARRAY2_handler;
-
-class VCPPModuleUSE_CHILD_SERVICE_PORT : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "USE_CHILD_SERVICE_PORT"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 3) {
-            throw VulException("USE_CHILD_SERVICE_PORT requires at least 3 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempChildServiceUse use;
-        use.instance_expr = entry.args[0];
-        use.service_name = entry.args[1];
-        use.alias_name = entry.args[2];
-        context.declareName(use.alias_name, "USE_CHILD_SERVICE_PORT", entry);
-        context.temp.child_service_uses.push_back(std::move(use));
-    }
-};
-static VCPPModuleAutoRegisterHandler<VCPPModuleUSE_CHILD_SERVICE_PORT> _auto_register_USE_CHILD_SERVICE_PORT_handler;
-
 class VCPPModuleUSE_CHILD_SERVICE : public VCPPModuleHandler {
 public:
     virtual string name() const { return "USE_CHILD_SERVICE"; }
@@ -654,26 +369,21 @@ public:
         if (entry.args.size() < 3) {
             throw VulException("USE_CHILD_SERVICE requires at least 3 arguments at " + context.getOriginalPosition(entry.pos));
         }
-        string array_size;
+        vector<string> dims;
+        bool has_dims = false;
         for (size_t i = 3; i < entry.args.size(); ++i) {
             auto attr = parseKeyValueArg(entry.args[i]);
-            if (!attr) {
-                continue;
+            if (isAttrKey(attr, "dims")) {
+                has_dims = true;
+                appendDimList(dims, attr->second);
             }
-            if (attr->first != "array") {
-                throw VulException("USE_CHILD_SERVICE has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-            }
-            ensureAttrValue("USE_CHILD_SERVICE", attr->first, attr->second);
-            if (!array_size.empty()) {
-                throw VulException("USE_CHILD_SERVICE array size is specified more than once at " + context.getOriginalPosition(entry.pos));
-            }
-            array_size = trim(attr->second);
         }
         VulTempChildServiceUse use;
         use.instance_expr = entry.args[0];
         use.service_name = entry.args[1];
         use.alias_name = entry.args[2];
-        use.array_size = std::move(array_size);
+        use.dims = std::move(dims);
+        use.has_dims = has_dims;
         context.declareName(use.alias_name, "USE_CHILD_SERVICE", entry);
         context.temp.child_service_uses.push_back(std::move(use));
     }
@@ -687,24 +397,22 @@ public:
         if (entry.args.size() < 4) {
             throw VulException("USE_CHILD_QUERY requires at least 4 arguments at " + context.getOriginalPosition(entry.pos));
         }
-        string array_size;
+        vector<string> dims;
+        bool has_dims = false;
         for (size_t i = 4; i < entry.args.size(); ++i) {
             auto attr = parseKeyValueArg(entry.args[i]);
-            if (!attr || attr->first != "array") {
-                throw VulException("USE_CHILD_QUERY only supports optional array=<N> after rettype at " + context.getOriginalPosition(entry.pos));
+            if (isAttrKey(attr, "dims")) {
+                has_dims = true;
+                appendDimList(dims, attr->second);
             }
-            ensureAttrValue("USE_CHILD_QUERY", attr->first, attr->second);
-            if (!array_size.empty()) {
-                throw VulException("USE_CHILD_QUERY array size is specified more than once at " + context.getOriginalPosition(entry.pos));
-            }
-            array_size = trim(attr->second);
         }
         VulTempChildQueryUse use;
         use.instance_expr = entry.args[0];
         use.query_name = entry.args[1];
         use.alias_name = entry.args[2];
         use.ret_type = entry.args[3];
-        use.array_size = std::move(array_size);
+        use.dims = std::move(dims);
+        use.has_dims = has_dims;
         context.declareName(use.alias_name, "USE_CHILD_QUERY", entry);
         context.temp.child_query_uses.push_back(std::move(use));
     }
@@ -794,60 +502,28 @@ public:
         bram.addr_size = entry.args[2];
         bram.read_ports = "1";
         bram.write_ports = "1";
-        bool mode_1rw = false;
-        size_t positional_idx = 0;
         for (size_t i = 3; i < entry.args.size(); ++i) {
             auto attr = parseKeyValueArg(entry.args[i]);
-            if (isAttrKey(attr, "read_ports") || isAttrKey(attr, "readports")) {
+            if (isAttrKey(attr, "read_ports")) {
                 ensureAttrValue("BRAM", attr->first, attr->second);
                 bram.read_ports = trim(attr->second);
-            } else if (isAttrKey(attr, "write_ports") || isAttrKey(attr, "writeports")) {
+            } else if (isAttrKey(attr, "write_ports")) {
                 ensureAttrValue("BRAM", attr->first, attr->second);
                 bram.write_ports = trim(attr->second);
             } else if (isAttrKey(attr, "mode")) {
                 ensureAttrValue("BRAM", attr->first, attr->second);
                 const string mode = trim(attr->second);
                 if (mode == "1rw") {
-                    mode_1rw = true;
+                    bram.mode_1rw = true;
                 } else if (mode == "generic") {
-                    mode_1rw = false;
+                    bram.mode_1rw = false;
                 } else {
                     throw VulException("BRAM mode must be 'generic' or '1rw' at " + context.getOriginalPosition(entry.pos));
                 }
             } else if (attr) {
                 throw VulException("BRAM has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-            } else if (positional_idx == 0) {
-                bram.read_ports = entry.args[i];
-                ++positional_idx;
-            } else if (positional_idx == 1) {
-                bram.write_ports = entry.args[i];
-                ++positional_idx;
-            } else {
-                throw VulException("BRAM has too many positional arguments at " + context.getOriginalPosition(entry.pos));
             }
         }
-        if (mode_1rw) {
-            bram.read_ports = "";
-            bram.write_ports = "";
-        }
-        context.temp.brams.push_back(std::move(bram));
-    }
-};
-
-class VCPPModuleBRAM_1RW : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "BRAM_1RW"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() != 3) {
-            throw VulException("BRAM_1RW requires exactly 3 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempBRAM bram;
-        bram.name = entry.args[0];
-        bram.data_type = entry.args[1];
-        context.declareName(bram.name, "BRAM_1RW", entry);
-        bram.addr_size = entry.args[2];
-        bram.read_ports = "";
-        bram.write_ports = "";
         context.temp.brams.push_back(std::move(bram));
     }
 };
@@ -865,29 +541,20 @@ public:
         context.declareName(rom.name, "ROM", entry);
         rom.addr_size = entry.args[2];
         rom.read_ports = "1";
-        size_t positional_idx = 0;
         for (size_t i = 3; i < entry.args.size(); ++i) {
             auto attr = parseKeyValueArg(entry.args[i]);
-            if (isAttrKey(attr, "read_ports") || isAttrKey(attr, "readports")) {
+            if (isAttrKey(attr, "read_ports")) {
                 ensureAttrValue("ROM", attr->first, attr->second);
                 rom.read_ports = trim(attr->second);
-            } else if (isAttrKey(attr, "init") || isAttrKey(attr, "init_path")) {
+            } else if (isAttrKey(attr, "init")) {
                 ensureAttrValue("ROM", attr->first, attr->second);
-                rom.init_path = trim(attr->second);
+                rom.init_path = parsePathMacroArg(attr->second);
             } else if (attr) {
                 throw VulException("ROM has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-            } else if (positional_idx == 0) {
-                rom.read_ports = entry.args[i];
-                ++positional_idx;
-            } else if (positional_idx == 1) {
-                rom.init_path = entry.args[i];
-                ++positional_idx;
-            } else {
-                throw VulException("ROM has too many positional arguments at " + context.getOriginalPosition(entry.pos));
             }
         }
         if (rom.init_path.empty()) {
-            throw VulException("ROM requires init=<path> or a positional init_path at " + context.getOriginalPosition(entry.pos));
+            throw VulException("ROM requires init=<path> at " + context.getOriginalPosition(entry.pos));
         }
         context.temp.roms.push_back(std::move(rom));
     }
@@ -907,54 +574,25 @@ public:
         queue.depth = entry.args[2];
         queue.enq_width = "1";
         queue.deq_width = "1";
-        size_t positional_idx = 0;
         for (size_t i = 3; i < entry.args.size(); ++i) {
             auto attr = parseKeyValueArg(entry.args[i]);
-            if (isAttrKey(attr, "enq_width") || isAttrKey(attr, "enqwidth")) {
+            if (isAttrKey(attr, "enq_width")) {
                 ensureAttrValue("QUEUE", attr->first, attr->second);
                 queue.enq_width = trim(attr->second);
-            } else if (isAttrKey(attr, "deq_width") || isAttrKey(attr, "deqwidth")) {
+            } else if (isAttrKey(attr, "deq_width")) {
                 ensureAttrValue("QUEUE", attr->first, attr->second);
                 queue.deq_width = trim(attr->second);
             } else if (attr) {
                 throw VulException("QUEUE has unknown attribute '" + attr->first + "' at " + context.getOriginalPosition(entry.pos));
-            } else if (positional_idx == 0) {
-                queue.enq_width = entry.args[i];
-                ++positional_idx;
-            } else if (positional_idx == 1) {
-                queue.deq_width = entry.args[i];
-                ++positional_idx;
-            } else {
-                throw VulException("QUEUE has too many positional arguments at " + context.getOriginalPosition(entry.pos));
             }
         }
         context.temp.queues.push_back(std::move(queue));
     }
 };
 
-class VCPPModuleQUEUE_MP : public VCPPModuleHandler {
-public:
-    virtual string name() const { return "QUEUE_MP"; }
-    virtual void run(VCPPModuleContext &context, const MacroEntry &entry) {
-        if (entry.args.size() != 5) {
-            throw VulException("QUEUE_MP requires exactly 5 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempQueue queue;
-        queue.name = entry.args[0];
-        queue.type = entry.args[1];
-        context.declareName(queue.name, "QUEUE_MP", entry);
-        queue.depth = entry.args[2];
-        queue.enq_width = entry.args[3];
-        queue.deq_width = entry.args[4];
-        context.temp.queues.push_back(std::move(queue));
-    }
-};
-
 static VCPPModuleAutoRegisterHandler<VCPPModuleBRAM> _auto_register_BRAM_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleBRAM_1RW> _auto_register_BRAM_1RW_handler;
 static VCPPModuleAutoRegisterHandler<VCPPModuleROM> _auto_register_ROM_handler;
 static VCPPModuleAutoRegisterHandler<VCPPModuleQUEUE> _auto_register_QUEUE_handler;
-static VCPPModuleAutoRegisterHandler<VCPPModuleQUEUE_MP> _auto_register_QUEUE_MP_handler;
 
 class VCPPModuleHELPER : public VCPPModuleHandler {
 public:

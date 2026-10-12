@@ -80,7 +80,7 @@ QUERY(result, uint32_t) { return saved.get(); }
 
 run_case("array-forward", {
     "Top.hpp": '''
-SERVICE(input, array=2, ARG(uint32_t) value);
+SERVICE(input, dims=[2], ARG(uint32_t) value);
 CHILD_INSTANCE(Lane, lane, dims=[2]);
 CONNECT_S_CS(input, lane[*], input);
 USE_CHILD_QUERY(lane[*], result, lane_result, uint32_t);
@@ -91,7 +91,7 @@ REGISTER(saved, uint32_t);
 SERVICE(input, ARG(uint32_t) value) { saved.setnext(value); }
 QUERY(result, uint32_t) { return saved.get(); }
 ''',
-}, main="QUERY(result, Values);\nREQUEST(input, array=2, ARG(uint32_t) value);",
+}, main="QUERY(result, Values);\nREQUEST(input, dims=[2], ARG(uint32_t) value);",
     setup="input<0>(5); input<1>(7);")
 
 run_case("missing-body", {"Top.hpp": "SERVICE(missing);\n"}, "no matching implementation")

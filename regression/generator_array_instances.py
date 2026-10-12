@@ -88,7 +88,7 @@ base = {"PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); PARAMETER(COL, 5); } QUERY(r
 for name, decl, error in [
     ("scalar-binding", "COORD(0)=ROW", "COORD dimension out of range"),
     ("out-of-range", "dims=[2], COORD(1)=ROW", "COORD dimension out of range"),
-    ("duplicate-axis", "dims=[2], COORD(0)=ROW, COORD(0)=COL", "Duplicate COORD binding"),
+    ("duplicate-axis", "dims=[2], COORD(0)=ROW, COORD(0)=COL", "specified more than once"),
     ("duplicate-param", "dims=[2,2], COORD(0)=ROW, COORD(1)=ROW", "Duplicate COORD binding"),
     ("unknown-param", "dims=[2], COORD(0)=MISSING", "Unknown child PARAMETER"),
     ("override-after", "dims=[2], COORD(0)=ROW, PARAM(ROW)=7", "cannot be overridden"),
@@ -102,8 +102,8 @@ USE_CHILD_QUERY(a[1][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 32) std::exit(1); sim_nextcycle(); if (result() != 32) std::exit(2);")
 
-case("legacy-binding", dict(base, **{"Top.hpp": '''
-CHILD_INSTANCE_ARRAY2(PE, a, 1, 3, COORD(1)=COL);
+case("explicit-shape-binding", dict(base, **{"Top.hpp": '''
+CHILD_INSTANCE(PE, a, dims=[1, 3], COORD(1)=COL);
 USE_CHILD_QUERY(a[0][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 32) std::exit(1); sim_nextcycle();")
@@ -169,8 +169,8 @@ case("array-priority-connected", {
     "Top.hpp": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
 CHILD_INSTANCE(Node, lane, dims=[2], COORD(0)=ROLE);
 CONNECT_CR_S(lane[*], high, high); CONNECT_CR_S(lane[*], low, low);
-SERVICE(high, array=2, priority=20) { value = 7; }
-SERVICE(low, array=2, priority=-20) { saved.setnext(value); }
+SERVICE(high, dims=[2], priority=20) { value = 7; }
+SERVICE(low, dims=[2], priority=-20) { saved.setnext(value); }
 TICK_IMPL() { value = value+10; }
 QUERY(result, uint32_t) { return saved.get(); }''',
     "Node.hpp": '''INTERFACE() { PARAMETER(ROLE, 0); REQUEST(high); REQUEST(low); }
@@ -195,8 +195,8 @@ case("coordinate-dependent-query-width", {
 }, body="if (result() != 1) std::exit(1); sim_nextcycle(); if (result() != 1) std::exit(2);", rtl=True)
 
 case("comparison-in-call-index", {
-    "Top.hpp": "REGISTER(saved, uint32_t); CHILD_INSTANCE(Node, n, PARAM(ROLE)=1); CONNECT_CR_S(n, send, capture); SERVICE(capture, array=2, ARG(uint32_t) data) { if constexpr (IDX == 1) { saved.setnext(data); } } QUERY(result, uint32_t) { return saved.get(); }",
-    "Node.hpp": "INTERFACE() { PARAMETER(ROLE, 0); REQUEST(send, array=2, ARG(uint32_t) data); } TICK_IMPL() { send<((ROLE > 0) ? 1 : 0)>(9); }",
+    "Top.hpp": "REGISTER(saved, uint32_t); CHILD_INSTANCE(Node, n, PARAM(ROLE)=1); CONNECT_CR_S(n, send, capture); SERVICE(capture, dims=[2], ARG(uint32_t) data) { if constexpr (IDX == 1) { saved.setnext(data); } } QUERY(result, uint32_t) { return saved.get(); }",
+    "Node.hpp": "INTERFACE() { PARAMETER(ROLE, 0); REQUEST(send, dims=[2], ARG(uint32_t) data); } TICK_IMPL() { send<((ROLE > 0) ? 1 : 0)>(9); }",
 }, body="sim_nextcycle(); if (result() != 9) std::exit(1);", rtl=True)
 
 case("concrete-name-collision", {

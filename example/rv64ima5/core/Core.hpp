@@ -162,10 +162,10 @@ CHILD_INSTANCE(Decoder, dec);
 CHILD_INSTANCE(ExecuteUnit, exu);
 CHILD_INSTANCE(RegisterFile, rf);
 
-USE_CHILD_SERVICE_PORT(dec, decode, decode_inst, ARG(uint32_t) inst, RESP(DecodedInst) out);
-USE_CHILD_SERVICE_PORT(exu, exec, exec_inst, ARG(ExecRequest) req, RESP(ExecResult) out);
-USE_CHILD_SERVICE_PORT(rf, read2, rf_read2, ARG(uint32_t) rs1, ARG(uint32_t) rs2, RESP(RegReadPair) out);
-USE_CHILD_SERVICE_PORT(rf, write, rf_write, ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
+USE_CHILD_SERVICE(dec, decode, decode_inst, ARG(uint32_t) inst, RESP(DecodedInst) out);
+USE_CHILD_SERVICE(exu, exec, exec_inst, ARG(ExecRequest) req, RESP(ExecResult) out);
+USE_CHILD_SERVICE(rf, read2, rf_read2, ARG(uint32_t) rs1, ARG(uint32_t) rs2, RESP(RegReadPair) out);
+USE_CHILD_SERVICE(rf, write, rf_write, ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
 USE_CHILD_QUERY(rf, zero_and_ra, rf_zero_and_ra, RegReadPair);
 
 QUERY(status, CoreStatus) {

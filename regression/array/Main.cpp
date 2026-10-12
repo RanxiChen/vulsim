@@ -6,8 +6,8 @@
 #include "header.hpp"
 TOP("./Top.hpp");
 PROJECT(".");
-REQUEST(submit1, array=8, ARG(uint32_t) data);
-REQUEST(submit2, array=4, ARG(uint32_t) data);
+REQUEST(submit1, dims=[8], ARG(uint32_t) data);
+REQUEST(submit2, dims=[4], ARG(uint32_t) data);
 QUERY(snapshot, ArraySnapshot);
 SIMULATION() {
     uint32_t expected1[8]; uint32_t expected2[4];

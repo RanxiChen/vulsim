@@ -11,11 +11,11 @@ REGISTER(scalar_reg, uint32_t) {
     scalar_reg = 1;
 }
 
-REGISTER_MUL(multi_reg, uint32_t, 3) {
+REGISTER(multi_reg, uint32_t, ports=3) {
     multi_reg = 10;
 }
 
-REGISTER_ARRAY1(array_reg, uint16_t, REG_ARRAY_SIZE, 2) {
+REGISTER(array_reg, uint16_t, ports=2, dims=[REG_ARRAY_SIZE]) {
     for (int i = 0; i < REG_ARRAY_SIZE; ++i) {
         array_reg[i] = static_cast<uint16_t>(i);
     }
@@ -28,7 +28,7 @@ REGISTER(payload_reg, Payload) {
     payload_reg.flag = false;
 }
 
-REGISTER_ARRAY1(payload_array, Payload, REG_ARRAY_SIZE, 2) {
+REGISTER(payload_array, Payload, ports=2, dims=[REG_ARRAY_SIZE]) {
     for (int i = 0; i < REG_ARRAY_SIZE; ++i) {
         payload_array[i].data = static_cast<uint32_t>(i);
         payload_array[i].meta.tag = static_cast<uint8_t>(i + 1);

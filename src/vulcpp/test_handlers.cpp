@@ -68,7 +68,7 @@ public:
         VulErrorContextGuard _err{"Processing REQUEST '" + req.name + "' at " + context.getOriginalPosition(entry.pos)};
         ReqServParseOptions options;
         options.allow_handshake = true;
-        options.allow_array = true;
+        options.allow_dims = true;
         parseReqArgsAndRets(entry.args, 1, req, &options, "REQUEST");
         if (options.handshake.has_value()) {
             req.has_handshake = *options.handshake;
@@ -77,25 +77,7 @@ public:
     }
 };
 
-class VCPPTestREQUEST_READY : public VCPPTestHandler {
-public:
-    virtual string name() const { return "REQUEST_READY"; }
-    virtual void run(VCPPTestContext &context, const MacroEntry &entry) {
-        if (entry.args.empty()) {
-            throw VulException("REQUEST_READY requires at least 1 argument at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempReq req;
-        req.name = entry.args[0];
-        req.has_handshake = true;
-        VulErrorContextGuard _err{"Processing REQUEST_READY '" + req.name + "' at " + context.getOriginalPosition(entry.pos)};
-        ReqServParseOptions options;
-        options.allow_array = true;
-        parseReqArgsAndRets(entry.args, 1, req, &options, "REQUEST_READY");
-        context.test.requests[req.name] = std::move(req);
-    }
-};
 static VCPPTestAutoRegisterHandler<VCPPTestREQUEST> _auto_register_TEST_REQUEST_handler;
-static VCPPTestAutoRegisterHandler<VCPPTestREQUEST_READY> _auto_register_TEST_REQUEST_READY_handler;
 
 class VCPPTestSERVICE : public VCPPTestHandler {
 public:
@@ -115,7 +97,7 @@ public:
         options.allow_handshake = true;
         options.allow_ready = true;
         options.allow_priority = true;
-        options.allow_array = true;
+        options.allow_dims = true;
         parseReqArgsAndRets(entry.args, 1, serv, &options, "SERVICE");
         if (options.handshake.has_value()) {
             serv.has_handshake = *options.handshake;
@@ -141,33 +123,7 @@ public:
     }
 };
 
-class VCPPTestSERVICE_READY : public VCPPTestHandler {
-public:
-    virtual string name() const { return "SERVICE_READY"; }
-    virtual void run(VCPPTestContext &context, const MacroEntry &entry) {
-        if (entry.args.size() < 2) {
-            throw VulException("SERVICE_READY requires at least 2 arguments at " + context.getOriginalPosition(entry.pos));
-        }
-        VulTempServ serv;
-        serv.name = entry.args[0];
-        serv.has_handshake = true;
-        serv.cond = entry.args[1];
-        serv.cond_debug = context.toDebugLoc(entry.pos);
-        serv.priority = "";
-        serv.codelines = entry.body;
-        serv.codelines_debug = context.bodyDebugLocs(entry);
-        VulErrorContextGuard _err{"Processing SERVICE_READY '" + serv.name + "' at " + context.getOriginalPosition(entry.pos)};
-        ReqServParseOptions options;
-        options.allow_array = true;
-        parseReqArgsAndRets(entry.args, 2, serv, &options, "SERVICE_READY");
-        if (context.test.services.find(serv.name) == context.test.services.end()) {
-            context.test.service_order.push_back(serv.name);
-        }
-        context.test.services[serv.name] = std::move(serv);
-    }
-};
 static VCPPTestAutoRegisterHandler<VCPPTestSERVICE> _auto_register_TEST_SERVICE_handler;
-static VCPPTestAutoRegisterHandler<VCPPTestSERVICE_READY> _auto_register_TEST_SERVICE_READY_handler;
 
 class VCPPTestQUERY : public VCPPTestHandler {
 public:

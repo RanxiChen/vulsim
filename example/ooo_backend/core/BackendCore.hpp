@@ -7,7 +7,7 @@
 INTERFACE() {
     PARAMETER(ALU_LANES, 2);
     PARAMETER(LSU_LANES, 1);
-    SERVICE(push_inst, handshake=1, array=INGRESS_WIDTH, ARG(BackendInstr) inst);
+    SERVICE(push_inst, handshake=1, dims=[INGRESS_WIDTH], ARG(BackendInstr) inst);
     REQUEST(mem_req0, ARG(MemRequest) req);
     REQUEST(mem_resp0, handshake=1, RESP(MemResponse) resp);
     REQUEST(mem_req1, ARG(MemRequest) req);
@@ -88,25 +88,25 @@ REGISTER(halted, bool) {
     halted = false;
 }
 
-REGISTER_ARRAY1(map_table, uint8_t, ARCH_REGS, 1) {
+REGISTER(map_table, uint8_t, ports=1, dims=[ARCH_REGS]) {
     for (int i = 0; i < ARCH_REGS; ++i) {
         map_table[i] = static_cast<uint8_t>(i);
     }
 }
 
-REGISTER_ARRAY1(phys_ready, bool, PHYS_REGS, 1) {
+REGISTER(phys_ready, bool, ports=1, dims=[PHYS_REGS]) {
     for (int i = 0; i < PHYS_REGS; ++i) {
         phys_ready[i] = i < ARCH_REGS;
     }
 }
 
-REGISTER_ARRAY1(phys_value, uint64_t, PHYS_REGS, 1) {
+REGISTER(phys_value, uint64_t, ports=1, dims=[PHYS_REGS]) {
     for (int i = 0; i < PHYS_REGS; ++i) {
         phys_value[i] = 0;
     }
 }
 
-REGISTER_ARRAY1(free_tags, uint8_t, PHYS_REGS, 1) {
+REGISTER(free_tags, uint8_t, ports=1, dims=[PHYS_REGS]) {
     for (int i = 0; i < PHYS_REGS; ++i) {
         free_tags[i] = 0;
     }
@@ -115,7 +115,7 @@ REGISTER_ARRAY1(free_tags, uint8_t, PHYS_REGS, 1) {
     }
 }
 
-REGISTER_ARRAY1(rob, RobEntry, ROB_SIZE, 1) {
+REGISTER(rob, RobEntry, ports=1, dims=[ROB_SIZE]) {
     for (int i = 0; i < ROB_SIZE; ++i) {
         rob[i].valid = false;
         rob[i].ready = false;
@@ -129,7 +129,7 @@ REGISTER_ARRAY1(rob, RobEntry, ROB_SIZE, 1) {
     }
 }
 
-REGISTER_ARRAY1(iq, IssueEntry, IQ_SIZE, 1) {
+REGISTER(iq, IssueEntry, ports=1, dims=[IQ_SIZE]) {
     for (int i = 0; i < IQ_SIZE; ++i) {
         iq[i].valid = false;
         iq[i].is_lsu = false;
@@ -147,13 +147,13 @@ REGISTER_ARRAY1(iq, IssueEntry, IQ_SIZE, 1) {
     }
 }
 
-REGISTER_ARRAY1(push_valid, bool, INGRESS_WIDTH, 1) {
+REGISTER(push_valid, bool, ports=1, dims=[INGRESS_WIDTH]) {
     for (int i = 0; i < INGRESS_WIDTH; ++i) {
         push_valid[i] = false;
     }
 }
 
-REGISTER_ARRAY1(push_data, BackendInstr, INGRESS_WIDTH, 1) {
+REGISTER(push_data, BackendInstr, ports=1, dims=[INGRESS_WIDTH]) {
     for (int i = 0; i < INGRESS_WIDTH; ++i) {
         push_data[i].valid = false;
         push_data[i].opcode = OP_NOP;
@@ -164,7 +164,7 @@ REGISTER_ARRAY1(push_data, BackendInstr, INGRESS_WIDTH, 1) {
     }
 }
 
-REGISTER_ARRAY1(ingress_buf, BackendInstr, FRONTEND_QUEUE_DEPTH, 1) {
+REGISTER(ingress_buf, BackendInstr, ports=1, dims=[FRONTEND_QUEUE_DEPTH]) {
     for (int i = 0; i < FRONTEND_QUEUE_DEPTH; ++i) {
         ingress_buf[i].valid = false;
         ingress_buf[i].opcode = OP_NOP;
@@ -175,7 +175,7 @@ REGISTER_ARRAY1(ingress_buf, BackendInstr, FRONTEND_QUEUE_DEPTH, 1) {
     }
 }
 
-SERVICE(push_inst, handshake=1, ready=!push_valid[IDX], array=INGRESS_WIDTH, ARG(BackendInstr) inst) {
+SERVICE(push_inst, handshake=1, ready=!push_valid[IDX], dims=[INGRESS_WIDTH], ARG(BackendInstr) inst) {
     BackendInstr copy = inst;
     copy.valid = true;
     push_data.setnext<0>(IDX, copy);
@@ -187,23 +187,23 @@ CHILD_INSTANCE(ALUPipeline, alu1);
 CHILD_INSTANCE(LSUPipeline, lsu0);
 CHILD_INSTANCE(LSUPipeline, lsu1);
 
-USE_CHILD_SERVICE_PORT(alu0, issue, alu0_issue, ARG(FuRequest) req);
-USE_CHILD_SERVICE_PORT(alu0, pop_result, alu0_pop_result, RESP(WritebackEvent) wb);
+USE_CHILD_SERVICE(alu0, issue, alu0_issue, ARG(FuRequest) req);
+USE_CHILD_SERVICE(alu0, pop_result, alu0_pop_result, RESP(WritebackEvent) wb);
 USE_CHILD_QUERY(alu0, can_accept, alu0_can_accept, bool);
 USE_CHILD_QUERY(alu0, has_result, alu0_has_result, bool);
 
-USE_CHILD_SERVICE_PORT(alu1, issue, alu1_issue, ARG(FuRequest) req);
-USE_CHILD_SERVICE_PORT(alu1, pop_result, alu1_pop_result, RESP(WritebackEvent) wb);
+USE_CHILD_SERVICE(alu1, issue, alu1_issue, ARG(FuRequest) req);
+USE_CHILD_SERVICE(alu1, pop_result, alu1_pop_result, RESP(WritebackEvent) wb);
 USE_CHILD_QUERY(alu1, can_accept, alu1_can_accept, bool);
 USE_CHILD_QUERY(alu1, has_result, alu1_has_result, bool);
 
-USE_CHILD_SERVICE_PORT(lsu0, issue, lsu0_issue, ARG(FuRequest) req);
-USE_CHILD_SERVICE_PORT(lsu0, pop_result, lsu0_pop_result, RESP(WritebackEvent) wb);
+USE_CHILD_SERVICE(lsu0, issue, lsu0_issue, ARG(FuRequest) req);
+USE_CHILD_SERVICE(lsu0, pop_result, lsu0_pop_result, RESP(WritebackEvent) wb);
 USE_CHILD_QUERY(lsu0, can_accept, lsu0_can_accept, bool);
 USE_CHILD_QUERY(lsu0, has_result, lsu0_has_result, bool);
 
-USE_CHILD_SERVICE_PORT(lsu1, issue, lsu1_issue, ARG(FuRequest) req);
-USE_CHILD_SERVICE_PORT(lsu1, pop_result, lsu1_pop_result, RESP(WritebackEvent) wb);
+USE_CHILD_SERVICE(lsu1, issue, lsu1_issue, ARG(FuRequest) req);
+USE_CHILD_SERVICE(lsu1, pop_result, lsu1_pop_result, RESP(WritebackEvent) wb);
 USE_CHILD_QUERY(lsu1, can_accept, lsu1_can_accept, bool);
 USE_CHILD_QUERY(lsu1, has_result, lsu1_has_result, bool);
 

@@ -3,13 +3,13 @@
 本章介绍 VulCPP 中的阵列化相关能力，重点包括：
 - 阵列化子实例的定义
 - 阵列化子实例之间、子实例与父模块之间的事务连接
-- `USE_CHILD_SERVICE_PORT` 在阵列化场景下的用法
+- `USE_CHILD_SERVICE` 在阵列化场景下的用法
 - `simgen` 与 `rtlgen` 对阵列化子实例的处理方式
 
 需要注意的是，本章讨论的是**子模块实例的阵列化**。请求端口、服务端口、寄存器数组、类型别名数组等能力仍按前文章节中的规则使用。
 
 
-## CHILD_INSTANCE_ARRAY1(module, name, N0, ...)
+## CHILD_INSTANCE(module, name, dims=[N0], ...)
 
 定义一个一维阵列化子实例：
 - `module`：子模块类型名
@@ -20,13 +20,13 @@
 示例：
 
 ```cpp
-CHILD_INSTANCE_ARRAY1(LineNode, lane, LEN);
+CHILD_INSTANCE(LineNode, lane, dims=[LEN]);
 ```
 
 上例定义了一个名为 `lane` 的一维子实例阵列，包含 `LEN` 个 `LineNode` 节点。
 
 
-## CHILD_INSTANCE_ARRAY2(module, name, N0, N1, ...)
+## CHILD_INSTANCE(module, name, dims=[N0, N1], ...)
 
 定义一个二维阵列化子实例：
 - `module`：子模块类型名
@@ -38,7 +38,7 @@ CHILD_INSTANCE_ARRAY1(LineNode, lane, LEN);
 示例：
 
 ```cpp
-CHILD_INSTANCE_ARRAY2(DiagNode, mesh, HEI, WID);
+CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID]);
 ```
 
 上例定义了一个 `HEI x WID` 的二维子实例阵列 `mesh`。
@@ -74,7 +74,7 @@ mesh[HEI - 1][WID - 1]
 - 目的侧表达式在实际连接时还会叠加索引范围判断，只有范围内的节点才会真正生成连接
 
 
-## USE_CHILD_SERVICE_PORT(instance, serv, alias, ...)
+## USE_CHILD_SERVICE(instance, serv, alias, ...)
 
 声明把子实例中的服务事务端口引出为父模块内部可直接调用的隐式 request：
 - `instance`：子实例名，标量实例可直接写名字，阵列化子实例可写带索引表达式的实例名
@@ -87,7 +87,7 @@ mesh[HEI - 1][WID - 1]
 ### 标量或单点引出
 
 ```cpp
-USE_CHILD_SERVICE_PORT(lane[0], left_in, lane0_in, ARG(uint32_t) data);
+USE_CHILD_SERVICE(lane[0], left_in, lane0_in, ARG(uint32_t) data);
 ```
 
 这会在父模块行为代码中引出一个可直接调用的名字：
@@ -101,7 +101,7 @@ lane0_in(5);
 如果在阵列化子实例上使用 `*`，则引出的隐式 request 本身也是阵列化的：
 
 ```cpp
-USE_CHILD_SERVICE_PORT(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
+USE_CHILD_SERVICE(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
 ```
 
 这会在父模块逻辑中引出一个按维度编号访问的名字：
@@ -255,7 +255,7 @@ INTERFACE() {
 CHILD_INSTANCE(PE, mesh, dims=[M, N], COORD(0)=ROW, COORD(1)=COL);
 ```
 
-`COORD(dimension)=parameter` 也适用于 `CHILD_INSTANCE_ARRAY1/2`。可以不绑定或只绑定部分维度。维度必须在本级数组范围内，目标必须是子模块声明的 `PARAMETER`。同一维度或同一参数不能重复绑定，绑定参数不能在同一实例声明中再通过 `PARAM(parameter)=expression` 赋值。
+`COORD(dimension)=parameter` 用于 `CHILD_INSTANCE(..., dims=[...])`。可以不绑定或只绑定部分维度。维度必须在本级数组范围内，目标必须是子模块声明的 `PARAMETER`。同一维度或同一参数不能重复绑定，绑定参数不能在同一实例声明中再通过 `PARAM(parameter)=expression` 赋值。
 
 绑定替代该实例的参数默认值，支持所有普通参数用途，包括数据宽度、队列深度、下级数组大小、逻辑和复位值。依赖参数的默认表达式按照参数声明顺序求值。
 
@@ -294,9 +294,9 @@ REGISTER(cycle, uint32_t) {
 
 REQUEST(print, ARG(uint32_t) data);
 
-CHILD_INSTANCE_ARRAY1(LineNode, lane, LEN);
+CHILD_INSTANCE(LineNode, lane, dims=[LEN]);
 
-USE_CHILD_SERVICE_PORT(lane[0], left_in, lane0_in, ARG(uint32_t) data);
+USE_CHILD_SERVICE(lane[0], left_in, lane0_in, ARG(uint32_t) data);
 
 CONNECT_CR_CS(lane[$], right_out, lane[$+1], left_in);
 CONNECT_CR_R(lane[LEN-1], right_out, print);
@@ -314,10 +314,10 @@ TICK_IMPL() {
 ### 二维脉动阵列
 
 ```cpp
-REQUEST(print, ARRAY(HEI), ARG(uint32_t) data);
+REQUEST(print, dims=[HEI], ARG(uint32_t) data);
 REQUEST(spill, ARG(uint32_t) data);
 
-SERVICE(output, ARRAY(HEI), ARG(uint32_t) data) {
+SERVICE(output, dims=[HEI], ARG(uint32_t) data) {
     if constexpr (IDX == 0) {
         captured0.setnext(data);
     } else if constexpr (IDX == 1) {
@@ -325,9 +325,9 @@ SERVICE(output, ARRAY(HEI), ARG(uint32_t) data) {
     }
 }
 
-CHILD_INSTANCE_ARRAY2(DiagNode, mesh, HEI, WID);
+CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID]);
 
-USE_CHILD_SERVICE_PORT(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
+USE_CHILD_SERVICE(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
 
 CONNECT_CR_CS(mesh[$][?], right_out, mesh[$+1][?+1], left_in);
 CONNECT_CR_S(mesh[*][WID-1], right_out, output);
@@ -340,13 +340,13 @@ CONNECT_CR_R(mesh[HEI-1][0], right_out, spill);
 ## 约束与注意事项
 
 1. 阵列维度必须是可静态求值的正整数常量表达式。
-2. 当前子实例阵列宏只直接提供到二维，即 `CHILD_INSTANCE_ARRAY1` 和 `CHILD_INSTANCE_ARRAY2`。
+2. 子实例维度统一使用 `CHILD_INSTANCE(..., dims=[N0,N1,...])` 声明。
 3. `$` 只能表示第一维，`?` 只能表示第二维。
 4. 在内部规则连接的源实例侧，`$` / `?` 若出现，则必须单独占据一个维度，不能写成带运算的表达式。
 5. 在内部规则连接的目的实例侧，`$` / `?` 可以出现在任意合法索引表达式中。
 6. `*` 仅允许出现在子实例与父模块边界连接中。
 7. 边界事务连接和子服务引出允许多个 `*`；`USE_CHILD_QUERY` 仍最多支持一个。
-8. 阵列化子实例若参与连接或 `USE_CHILD_SERVICE_PORT`，必须显式写出索引表达式，不能只写实例名。
+8. 阵列化子实例若参与连接或 `USE_CHILD_SERVICE`，必须显式写出索引表达式，不能只写实例名。
 9. `CONNECT_CR_S(mesh[*][WID-1], right_out, output)` 这种写法要求父模块端口 `output` 本身也是维度匹配的阵列化事务端口。
 10. 引出的阵列 REQUEST 支持完整坐标模板调用和裸调用；裸调用的 ARG／RESP 必须为匹配形状的嵌套 `std::array`，最后一维变化最快。
 11. 普通事务连接必须匹配各维大小，而不仅是端口总数；边界连接的形状为通配维度与子事务维度的组合。

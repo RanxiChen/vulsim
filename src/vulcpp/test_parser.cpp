@@ -15,6 +15,7 @@
 #include "test_parser.hpp"
 
 #include "common.hpp"
+#include "declaration_args.hpp"
 #include "test_handlers.hpp"
 #include "../cppparse.hpp"
 #include "../stringop.hpp"
@@ -76,7 +77,8 @@ VulStaticTestHarnessModule parseTestModule(
 
     vector<MacroEntry> macro_entries = findAllMacroEntries(code_lines);
     for (const auto &entry : macro_entries) {
-        VCPPTestHandlerRegistry::instance().run(context, entry);
+        VulErrorContextGuard declaration_context{"Declaration at " + context.getOriginalPosition(entry.pos)};
+        VCPPTestHandlerRegistry::instance().run(context, normalizeDeclaration(entry, context.getOriginalPosition(entry.pos)));
     }
 
     return std::move(context.test);
@@ -84,12 +86,18 @@ VulStaticTestHarnessModule parseTestModule(
 
 std::pair<string, string> scanTestModuleBindingPaths(const string &test_filepath) {
     vector<string> code_lines = readFileLines(test_filepath);
-    code_lines = stripComments(code_lines).lines;
+    auto stripped = stripComments(code_lines);
+    VCPPTestContext context;
+    context.filepath = test_filepath;
+    context.line_mapping = stripped.mapping;
+    code_lines = std::move(stripped.lines);
     vector<MacroEntry> macro_entries = findAllMacroEntries(code_lines);
 
     string top_module_path;
     string project_dir_path;
-    for (const auto &entry : macro_entries) {
+    for (const auto &raw_entry : macro_entries) {
+        if (raw_entry.name != "TOP" && raw_entry.name != "PROJECT") continue;
+        const auto entry = normalizeDeclaration(raw_entry, test_filepath + ":" + context.getOriginalPosition(raw_entry.pos));
         if (entry.name == "TOP") {
             if (entry.args.size() != 1) {
                 throw VulException("TOP requires exactly 1 argument");

@@ -33,7 +33,7 @@ struct ReqServParseOptions {
     bool allow_handshake = false;
     bool allow_ready = false;
     bool allow_priority = false;
-    bool allow_array = true;
+    bool allow_dims = true;
     std::optional<bool> handshake;
     std::optional<string> ready;
     std::optional<string> priority;

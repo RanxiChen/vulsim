@@ -2,42 +2,22 @@
 
 在 VulCPP 中，模块是构建硬件设计的基本单元。每个模块通常由一个同名 C++ 头文件定义，文件中包含模块参数、接口、状态组件、子实例、连接关系和行为代码。
 
-本章优先介绍新的统一 API 写法。旧版本中通过宏名区分的写法仍然兼容，例如 `REQUEST_READY`、`SERVICE_PRIO_READY`、`REGISTER_ARRAY1` 等；这些兼容语法糖集中列在本文末尾。
 
 ## 3.1 通用参数约定
 
-统一定义风格：
+每个宏都有固定参数顺序，也支持显式 `key=value`，完整列表见 [声明 API 参数表](0-declarations.md)。位置参数必须在命名参数之前；命名参数可以按任意顺序填写。省略可选参数使用默认值，跳过中间参数时应显式命名后续参数。
 
 ```cpp
-MACRO(required_arg0, required_arg1, key=value, key2=value2, ...)
+REGISTER(counter, uint32_t, 2);
+REGISTER(counter, uint32_t, ports=2);
+REGISTER(name=counter, ports=2, type=uint32_t);
 ```
 
-必要位置参数写在最前面，可选属性使用 `key=value`。事务端口的业务参数使用 `ARG(type) name` 和 `RESP(type) name`。参数间允许换行：
-
-```cpp
-REQUEST(send, handshake=1, ARG(uint8_t) data);
-SERVICE(recv, ready=q.deqvalid(), RESP(uint32_t) data) {
-    ...
-}
-```
-
-布尔属性支持 `0/1` 和 `true/false`。维度列表使用方括号 `[...]`：
-
-```cpp
-REGISTER(pipe, PipeStage, dims=[PIPE_DEPTH], ports=1) { ... }
-CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID]);
-ALIAS(U32x4, uint32_t, dims=[4]);
-```
-
-没有逗号的单个维度也可以直接写：
-
-```cpp
-REGISTER(pipe, PipeStage, dims=PIPE_DEPTH, ports=1) { ... }
-```
+重复属性、未知键、空参数、不合法的位置／命名混合均报错。
 
 ## 3.2 模块实现版本选择
 
-模块可以使用 `INTERFACE` / `USE_VERSION` / `VERSION` 将对外接口和具体实现分开。模块文件中没有 `INTERFACE()` 时，解析器按旧流程处理整个模块文件；一旦定义了 `INTERFACE()`，模块接口必须全部放在 `INTERFACE()` 中。
+模块可以使用 `INTERFACE` / `USE_VERSION` / `VERSION` 将对外接口和具体实现分开。模块文件中没有 `INTERFACE()` 时，解析器按单版本流程处理整个模块文件；一旦定义了 `INTERFACE()`，模块接口必须全部放在 `INTERFACE()` 中。
 
 版本化模块的顶层宏顺序必须是：
 
@@ -77,7 +57,7 @@ INTERFACE() {
 
 实现版本中可以包含具体实现，例如 `CONFIG`、`STRUCT`、`REGISTER`、`WIRE`、`BRAM`、`QUEUE`、`CHILD_INSTANCE`、`CONNECT_*`、`SERVICE(...) { ... }` 和 `TICK_IMPL() { ... }`。无论是默认实现还是 `VERSION(name)`，都不能重新声明 `PARAMETER` 或 `REQUEST`；`SERVICE` 必须提供代码块，并且必须对应 `INTERFACE` 中已经声明过的同名服务。
 
-解析时，工具会把 `INTERFACE()` 的内容和所选实现内容按顺序拼接后送入普通模块解析流程。因此接口中的 `SERVICE` 声明和实现中的 `SERVICE` 实现仍遵循普通前置声明规则：`ARG/RESP` 的数量、类型和名字、`array`、`handshake` 必须一致；如果声明中显式写了 `priority=`，实现也必须写同样的 priority 值。嵌套域中的错误位置和 RTL debug 信息仍保留用户源文件中的原始行号。
+解析时，工具会把 `INTERFACE()` 的内容和所选实现内容按顺序拼接后送入普通模块解析流程。因此接口中的 `SERVICE` 声明和实现中的 `SERVICE` 实现仍遵循普通前置声明规则：`ARG/RESP` 的数量、类型和名字、`dims`、`handshake` 必须一致；如果声明中显式写了 `priority=`，实现也必须写同样的 priority 值。嵌套域中的错误位置和 RTL debug 信息仍保留用户源文件中的原始行号。
 
 默认实现示例：
 
@@ -341,21 +321,20 @@ TICK_IMPL() {
 - `ARG(type) name`：只读输入参数，调用方驱动被调用方。
 - `RESP(type) name`：只写响应参数，被调用方驱动调用方。
 
-### REQUEST(name, handshake=0, array=N / dims=[...], ARG(...), RESP(...))
+### REQUEST(name, handshake=false, dims=[], ARG(...), RESP(...))
 
 定义请求事务端口：
 
 ```cpp
 REQUEST(output, ARG(Int<25>) data, ARG(Int<7>) tag);
 REQUEST(fetch, handshake=1, RESP(uint32_t) data);
-REQUEST(lane_out, array=LANES, ARG(uint32_t) data);
+REQUEST(lane_out, dims=[LANES], ARG(uint32_t) data);
 ```
 
 参数说明：
 
 - `handshake`：是否包含 valid-ready 握手返回值，默认 `0`。`handshake=1` 时事务函数调用返回 `bool`。
-- `array`：一维事务端口数量，等价于 `dims=[N]`。
-- `dims`：事务阵列形状，支持多维正整数常量表达式，维度乘积必须能用 `uint32_t` 表示；不得与 `array`／`ARRAY` 混用。省略阵列属性时为普通端口。
+- `dims`：事务阵列形状，支持多维正整数常量表达式，维度乘积必须能用 `uint32_t` 表示。省略阵列属性时为普通端口。
 - `ARG/RESP`：端口参数列表。
 
 等价行为：
@@ -368,7 +347,7 @@ REQUEST(send, handshake=1, ARG(uint8_t) data); // bool send(const uint8_t &data)
 阵列化请求端口支持显式坐标调用和无模板参数的批量调用：
 
 ```cpp
-REQUEST(out, array=2, ARG(uint32_t) data);
+REQUEST(out, dims=[2], ARG(uint32_t) data);
 
 TICK_IMPL() {
     out<0>(1);
@@ -401,7 +380,7 @@ TICK_IMPL() {
 
 批量 ARG、RESP 和握手返回值按事务维度在原有类型外侧叠加 `std::array`。ARG 数组按值传递，在入口取得输入副本；RESP 数组按引用传递。实参表达式只求值一次，不支持标量广播。非握手批量调用返回 `void`，无参数事务也可直接裸调用；布尔结果数组不能直接用于 `if` 条件。
 
-### SERVICE(name, handshake=0, ready=cond, priority=prio, array=N / dims=[...], ARG(...), RESP(...)) { ... }
+### SERVICE(name, handshake=false, dims=[], priority=0, ready=cond, ARG(...), RESP(...)) { ... }
 
 定义服务事务端口：
 
@@ -425,7 +404,7 @@ SERVICE(write, priority=1, ARG(uint8_t) data) {
 - `handshake`：是否包含 valid-ready 握手，默认 `0`。
 - `ready`：握手 ready 条件。提供 `ready` 时等价于 `handshake=1`；如果显式写 `handshake=1`，必须提供 `ready`。
 - `priority`：服务逻辑块的周期内执行顺序。值越大越先执行；正值在 Tick 前，负值在 Tick 后，Tick 的值为 0。同值之间不保证顺序。
-- `array`／`dims`：服务端口阵列形状，必须与相连 REQUEST 的形状一致。
+- `dims`：服务端口阵列形状，必须与相连 REQUEST 的形状一致。
 - `IDX`：当前服务端口的扁平编号；`IDX_DIM(d)`：第 `d` 维坐标，可用于实现和 ready 表达式。`d` 必须是合法的静态维度表达式。SERVICE 不增加批量调用接口。
 - `ARG/RESP`：端口参数列表。
 - `{ ... }`：事务成功触发时执行的逻辑。
@@ -450,7 +429,7 @@ SERVICE(recv, handshake=1, ready=q.deqvalid(), ARG(uint8_t) data) {
 }
 ```
 
-如果写了前置声明，则之后的同名实现必须与声明保持一致：`ARG/RESP` 的数量、类型和名字、`array`、`handshake` 都必须匹配。
+如果写了前置声明，则之后的同名实现必须与声明保持一致：`ARG/RESP` 的数量、类型和名字、`dims`、`handshake` 都必须匹配。
 
 前置声明中不写 `ready=`，因为 ready 条件属于实现逻辑；`handshake=1` 的声明是合法的，对应实现仍必须提供 `ready=`。`priority` 是服务实现语义，声明中可以省略；如果声明中显式写了 `priority=`，则实现必须写出同样的 priority 值。
 
@@ -462,7 +441,7 @@ SERVICE(recv, handshake=1, ready=q.deqvalid(), ARG(uint8_t) data) {
 
 ## 3.6 QUERY 与周期行为
 
-### QUERY(name, rettype) { ... }
+### QUERY(name, type) { ... }
 
 定义只读查询接口：
 
@@ -496,7 +475,7 @@ TICK_IMPL() {
 
 ## 3.7 子实例与子接口引入
 
-### CHILD_INSTANCE(module, name, dims=[...], PARAM(param)=value, ..., COORD(dim)=param, ...)
+### CHILD_INSTANCE(module, name, dims=[...], PARAM(param)=value, COORD(dim)=param, ..., ...)
 
 定义子模块实例：
 
@@ -514,7 +493,7 @@ CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID], PARAM(WIDTH)=32);
 - `PARAM(param)=value`：覆盖子模块中的 `PARAMETER`。
 - `COORD(dim)=param`：将本级数组坐标绑定到子模块已有 `PARAMETER`；可只绑定部分维度，绑定参数不能再通过 `PARAM` 覆盖。绑定参数可显式下传，内部坐标不自动成为下级普通参数。详见第 8 章。
 
-### USE_CHILD_SERVICE(instance, service, alias, array=N, ARG(...), RESP(...))
+### USE_CHILD_SERVICE(instance, service, alias, dims=[N], ARG(...), RESP(...))
 
 把子实例服务端口引入当前模块行为代码：
 
@@ -531,7 +510,7 @@ TICK_IMPL() {
 
 ```cpp
 CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID]);
-USE_CHILD_SERVICE(mesh[*][0], left_in, mesh_in, array=HEI, ARG(uint32_t) data);
+USE_CHILD_SERVICE(mesh[*][0], left_in, mesh_in, dims=[HEI], ARG(uint32_t) data);
 
 TICK_IMPL() {
     mesh_in<0>(1); // call mesh[0][0].left_in(1)
@@ -539,9 +518,9 @@ TICK_IMPL() {
 }
 ```
 
-其中 `array=N` 用于将阵列化子实例的同名端口作为阵列化事务端口引出；如果能直接从 `instance` 表达式的 `*` 维度推断，也可以省略 `array`。无 `*` 通配时不应写 `array=`。
+`dims=[...]` 用于显式声明通配实例的阵列形状，必须逐维匹配 `instance` 表达式中的 `*` 维度；省略时从通配维度推断。无 `*` 时省略或写 `dims=[]`。子服务自身的事务维度继续由工具追加到引出端口形状。
 
-### USE_CHILD_QUERY(instance, query, alias, rettype, array=N)
+### USE_CHILD_QUERY(instance, query, alias, type, dims=[N])
 
 把子实例 query 引入当前模块：
 
@@ -554,7 +533,7 @@ QUERY(snapshot, Status) {
 }
 ```
 
-阵列化子实例同样可以使用具体索引或一个 `*` 通配维度。通配维度引出的 alias 使用模板参数调用；`array=N` 的含义和 `USE_CHILD_SERVICE` 相同。
+阵列化子实例同样可以使用具体索引或一个 `*` 通配维度。通配维度引出的 alias 使用模板参数调用；`dims=[N]` 必须匹配该通配维度，省略时自动推断。
 
 QUERY 不像 SERVICE 一样有阵列化选项。如需批量透传阵列化子实例的 QUERY，推荐实现为让 QUERY 返回一个数组或结构体类型，在 QUERY 内部循环调用子实例 query。
 
@@ -611,7 +590,7 @@ CONNECT_CR_CS(mesh[$][?], right_out, mesh[$+1][?+1], left_in);
 
 对于父模块中定义的服务，则必须进行以下处理之一：
 1. 被连接到某个子模块的某个服务，且必须具有相同的参数与返回值定义。
-2. 被用户代码实现（在 `SERVICE_LOGIC_IMPL` 中提供实现代码）。
+2. 被用户代码实现（在 `SERVICE(...) { ... }` 中提供实现代码）。
 
 对于子模块的外部端口中定义的请求，则必须进行以下处理之一：
 1. 被连接到某个子模块的某个服务，且必须具有相同的参数与返回值定义。
@@ -633,7 +612,7 @@ BRAM(data_array, uint32_t, 1024, read_ports=2, write_ports=1);
 BRAM(data_array, uint32_t, 1024, mode=1rw);
 ```
 
-`mode=generic` 使用显式读写端口数；`mode=1rw` 使用单读写口 BRAM 语义。
+`mode=generic` 使用显式读写端口数；`mode=1rw` 使用单读写口 BRAM 语义，`read_ports` 和 `write_ports` 均必须为 1。
 
 ### ROM(name, data_width, size, read_ports=1, init=path)
 
@@ -654,146 +633,3 @@ QUEUE(q, uint32_t, 8, enq_width=3, deq_width=2);
 ```
 
 普通队列默认单 enq / 单 deq。显式设置 `enq_width` 或 `deq_width` 大于 1 时表示多端口队列。
-
-## 3.10 旧版兼容语法糖
-
-以下旧写法仍然兼容，推荐新代码优先使用前文的新 API。
-
-### 类型别名数组
-
-```cpp
-ALIAS_ARRAY1(name, type, N);
-ALIAS_ARRAY2(name, type, N1, N2);
-```
-
-等价于：
-
-```cpp
-ALIAS(name, type, dims=[N]);
-ALIAS(name, type, dims=[N1, N2]);
-```
-
-当前 `ALIAS(name, type, N...)` 的位置参数维度写法也仍然兼容。
-
-### 多端口和数组寄存器
-
-```cpp
-REGISTER_MUL(name, type, portnum) { ... }
-REGISTER_ARRAY1(name, type, size, portnum) { ... }
-```
-
-等价于：
-
-```cpp
-REGISTER(name, type, ports=portnum) { ... }
-REGISTER(name, type, dims=[size], ports=portnum) { ... }
-```
-
-旧的 `REGISTER(name, type, portnum, dim...)` 位置参数形式仍然兼容，但新代码建议显式写 `ports=` 和 `dims=`。`REGISTER_MUL` 和 `REGISTER_ARRAY1` 同样允许用分号结束的无块声明或部分赋值的复位块，默认未赋值域为 0。
-
-### 握手请求端口
-
-```cpp
-REQUEST_READY(name, ARG(type) arg, RESP(type) ret);
-```
-
-等价于：
-
-```cpp
-REQUEST(name, handshake=1, ARG(type) arg, RESP(type) ret);
-```
-
-旧的 `ARRAY(N)` 端口阵列写法仍然兼容：
-
-```cpp
-REQUEST(name, ARRAY(N), ARG(type) arg);
-```
-
-建议新代码写：
-
-```cpp
-REQUEST(name, array=N, ARG(type) arg);
-```
-
-### 握手和优先级服务端口
-
-```cpp
-SERVICE_READY(name, condition, ARG(type) arg) { ... }
-SERVICE_PRIO(name, priority, ARG(type) arg) { ... }
-SERVICE_PRIO_READY(name, priority, condition, ARG(type) arg) { ... }
-```
-
-等价于：
-
-```cpp
-SERVICE(name, handshake=1, ready=condition, ARG(type) arg) { ... }
-SERVICE(name, priority=priority, ARG(type) arg) { ... }
-SERVICE(name, handshake=1, priority=priority, ready=condition, ARG(type) arg) { ... }
-```
-
-`SERVICE(..., ARRAY(N), ...)` 的旧阵列写法也仍然兼容，推荐改为 `array=N`。
-
-### 子实例数组
-
-```cpp
-CHILD_INSTANCE_ARRAY1(module, name, N0, PARAM(param)=value);
-CHILD_INSTANCE_ARRAY2(module, name, N0, N1, PARAM(param)=value);
-```
-
-等价于：
-
-```cpp
-CHILD_INSTANCE(module, name, dims=[N0], PARAM(param)=value);
-CHILD_INSTANCE(module, name, dims=[N0, N1], PARAM(param)=value);
-```
-
-### 子服务端口引入
-
-```cpp
-USE_CHILD_SERVICE_PORT(instance, serv, alias, ARG(type) arg, RESP(type) ret);
-```
-
-等价于：
-
-```cpp
-USE_CHILD_SERVICE(instance, serv, alias, ARG(type) arg, RESP(type) ret);
-```
-
-### 连接宏
-
-```cpp
-CONNECT_CR_CS(srcmod, srcreq, dstmod, dstserv);
-CONNECT_CR_S(srcmod, srcreq, dstserv);
-CONNECT_CR_R(srcmod, srcreq, dstreq);
-CONNECT_S_CS(srcserv, dstmod, dstserv);
-```
-
-连接宏当前保持旧版四宏名形式，不提供合并后的 `CONNECT(...)` 写法。
-
-### 旧存储组件变体
-
-```cpp
-BRAM_1RW(name, datatype, size);
-QUEUE_MP(name, type, depth, enqwidth, deqwidth);
-```
-
-等价于：
-
-```cpp
-BRAM(name, datatype, size, mode=1rw);
-QUEUE(name, type, depth, enq_width=enqwidth, deq_width=deqwidth);
-```
-
-旧的通用 BRAM 和 ROM 位置参数仍然兼容：
-
-```cpp
-BRAM(name, datatype, size, readports, writeports);
-ROM(name, datawidth, size, readports, init_path);
-```
-
-推荐新代码写：
-
-```cpp
-BRAM(name, datatype, size, read_ports=readports, write_ports=writeports);
-ROM(name, datawidth, size, read_ports=readports, init=init_path);
-```

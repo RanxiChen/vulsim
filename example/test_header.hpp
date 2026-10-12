@@ -3,8 +3,8 @@
 
 #include <defhelper.hpp>
 
-ALIAS_ARRAY1(AESData, uint8_t, 16);
-ALIAS_ARRAY1(AESKey, uint8_t, 16);
+ALIAS(AESData, uint8_t, dims=[16]);
+ALIAS(AESKey, uint8_t, dims=[16]);
 
 CONFIG(WAY, 4);
 CONFIG(ADDRW, 8);
@@ -17,7 +17,7 @@ STRUCT(MemItem) {
     bool     valid;
 };
 
-ALIAS_ARRAY1(MemWay, MemItem, WAY);
+ALIAS(MemWay, MemItem, dims=[WAY]);
 
 
 

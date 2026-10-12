@@ -5,9 +5,9 @@
 #include "header.hpp"
 
 INTERFACE() {
-    REQUEST(print, array=HEI, ARG(uint32_t) data);
+    REQUEST(print, dims=[HEI], ARG(uint32_t) data);
     REQUEST(spill, ARG(uint32_t) data);
-    SERVICE(output, array=HEI, ARG(uint32_t) data);
+    SERVICE(output, dims=[HEI], ARG(uint32_t) data);
 }
 
 REGISTER(cycle, uint32_t) {
@@ -22,7 +22,7 @@ REGISTER(captured1, uint32_t) {
     captured1 = 0;
 }
 
-SERVICE(output, array=HEI, ARG(uint32_t) data) {
+SERVICE(output, dims=[HEI], ARG(uint32_t) data) {
     if constexpr (IDX == 0) {
         captured0.setnext(data);
     } else if constexpr (IDX == 1) {
@@ -30,9 +30,9 @@ SERVICE(output, array=HEI, ARG(uint32_t) data) {
     }
 }
 
-CHILD_INSTANCE_ARRAY2(DiagNode, mesh, HEI, WID);
+CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID]);
 
-USE_CHILD_SERVICE_PORT(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
+USE_CHILD_SERVICE(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
 
 CONNECT_CR_CS(mesh[$][?], right_out, mesh[$+1][?+1], left_in);
 CONNECT_CR_S(mesh[*][WID-1], right_out, output);

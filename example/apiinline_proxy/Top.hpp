@@ -8,11 +8,11 @@ INTERFACE() {
 }
 
 QUEUE(simple_q, ProxyPayload, 4);
-QUEUE_MP(mp_q, ProxyPayload, 8, 2, 2);
+QUEUE(mp_q, ProxyPayload, 8, enq_width=2, deq_width=2);
 
-BRAM_1RW(rw_mem, ProxyPayload, PROXY_MEM_SIZE);
-BRAM(bank_mem, ProxyPayload, PROXY_MEM_SIZE, 2, 2);
-ROM(coeff_rom, 16, PROXY_MEM_SIZE, 2, rom_init.hex);
+BRAM(rw_mem, ProxyPayload, PROXY_MEM_SIZE, mode=1rw);
+BRAM(bank_mem, ProxyPayload, PROXY_MEM_SIZE, read_ports=2, write_ports=2);
+ROM(coeff_rom, 16, PROXY_MEM_SIZE, read_ports=2, init=rom_init.hex);
 
 REGISTER(addr_reg, uint32_t) {
     addr_reg = 0;

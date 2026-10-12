@@ -51,19 +51,19 @@ inline uint64_t alu_execute(const FuRequest &req) {
 QUEUE(issueq, FuRequest, INPUT_DEPTH);
 QUEUE(resultq, WritebackEvent, RESULT_DEPTH);
 
-REGISTER_ARRAY1(slot_valid, bool, PIPE_SLOTS, 1) {
+REGISTER(slot_valid, bool, ports=1, dims=[PIPE_SLOTS]) {
     for (int i = 0; i < PIPE_SLOTS; ++i) {
         slot_valid[i] = false;
     }
 }
 
-REGISTER_ARRAY1(slot_remain, uint32_t, PIPE_SLOTS, 1) {
+REGISTER(slot_remain, uint32_t, ports=1, dims=[PIPE_SLOTS]) {
     for (int i = 0; i < PIPE_SLOTS; ++i) {
         slot_remain[i] = 0;
     }
 }
 
-REGISTER_ARRAY1(slot_req, FuRequest, PIPE_SLOTS, 1) {
+REGISTER(slot_req, FuRequest, ports=1, dims=[PIPE_SLOTS]) {
     for (int i = 0; i < PIPE_SLOTS; ++i) {
         slot_req[i].valid = false;
         slot_req[i].opcode = OP_NOP;

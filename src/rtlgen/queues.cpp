@@ -120,8 +120,10 @@ void _procQueues(RTLGenContext &ctx) {
             ctx.rtl_inst.push_back("  .clrnext(" + port_clrnext + ")\n");
             ctx.rtl_inst.push_back(");\n");
         } else {
-            string enqready_type_str = "uint32_t";
-            string deqvalid_type_str = "uint32_t";
+            // Match the queue RTL's native count ports. API helpers widen the
+            // values to uint32_t without creating a mismatched logic-module ABI.
+            string enqready_type_str = "Int<" + enq_cnt_width_str + ">";
+            string deqvalid_type_str = "Int<" + deq_cnt_width_str + ">";
             string enqvalid_type_str = "Int<" + enq_cnt_width_str + ">";
             string deqready_type_str = "Int<" + deq_cnt_width_str + ">";
             string enqdata_type_str = "std::array<Int<" + data_width_str + ">, " + enq_width_str + ">";

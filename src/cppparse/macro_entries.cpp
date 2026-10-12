@@ -310,14 +310,35 @@ std::vector<std::string> splitTopLevelArgs(std::string_view sv) {
     int bracketDepth = 0;
     int angleDepth = 0;
 
-    auto isTemplateAngleOpen = [&](size_t i) -> bool {
-        // 这里故意只做保守处理。
-        // 对普通宏参数，逗号通常只需要避开 (), {}, []。
-        // 如果参数中包含 std::map<int,int> 这种模板类型，可以通过 angleDepth 避免误切。
-        return i < sv.size() && sv[i] == '<';
-    };
-
     std::string tmp(sv);
+    auto isTemplateAngleOpen = [&](size_t i) -> bool {
+        if (i == 0 || tmp[i] != '<' || i + 1 == tmp.size() ||
+            tmp[i+1] == '<' || tmp[i+1] == '=' || parenDepth || braceDepth || bracketDepth)
+            return false;
+        size_t prev = i;
+        while (prev && isSpace(tmp[prev-1])) --prev;
+        if (!prev || (!isIdentChar(tmp[prev-1]) && tmp[prev-1] != '>')) return false;
+        // Only a balanced template-id protects a top-level comma. Comparisons
+        // inside grouping already have their commas protected by (), [] or {}.
+        int angles = 1, parens = 0, brackets = 0, braces = 0;
+        for (size_t j = i + 1; j < tmp.size(); ++j) {
+            size_t after = skipLiteralIfAt(tmp, j);
+            if (after != j) { j = after - 1; continue; }
+            const char c = tmp[j];
+            if (c == '(') ++parens;
+            else if (c == ')') { if (!parens) return false; --parens; }
+            else if (c == '[') ++brackets;
+            else if (c == ']') { if (!brackets) return false; --brackets; }
+            else if (c == '{') ++braces;
+            else if (c == '}') { if (!braces) return false; --braces; }
+            else if (!parens && !brackets && !braces) {
+                if (c == '=' || c == '?' || c == ';') return false;
+                if (c == '<') ++angles;
+                if (c == '>' && --angles == 0) return true;
+            }
+        }
+        return false;
+    };
 
     while (p < tmp.size()) {
         size_t afterLiteral = skipLiteralIfAt(tmp, p);
@@ -342,7 +363,7 @@ std::vector<std::string> splitTopLevelArgs(std::string_view sv) {
             if (bracketDepth > 0) --bracketDepth;
         } else if (isTemplateAngleOpen(p)) {
             ++angleDepth;
-        } else if (c == '>') {
+        } else if (c == '>' && parenDepth == 0 && braceDepth == 0 && bracketDepth == 0) {
             if (angleDepth > 0) --angleDepth;
         } else if (
             c == ',' &&

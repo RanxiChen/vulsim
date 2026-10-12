@@ -9,8 +9,8 @@
 TOP("../core/ALUPipeline.hpp");
 PROJECT("..");
 
-REQUEST_READY(issue, ARG(FuRequest) req);
-REQUEST_READY(pop_result, RESP(WritebackEvent) wb);
+REQUEST(issue, handshake=true, ARG(FuRequest) req);
+REQUEST(pop_result, handshake=true, RESP(WritebackEvent) wb);
 QUERY(can_accept, bool);
 QUERY(has_result, bool);
 QUERY(status, UnitStatus);

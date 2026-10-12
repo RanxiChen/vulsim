@@ -23,7 +23,7 @@ GLOBAL() {
     MemResponse resp1{};
 }
 
-REQUEST_READY(push_inst, ARRAY(INGRESS_WIDTH), ARG(BackendInstr) inst);
+REQUEST(push_inst, handshake=true, dims=[INGRESS_WIDTH], ARG(BackendInstr) inst);
 QUERY(status, BackendStatus);
 QUERY(regs, ArchRegSnapshot);
 
@@ -42,7 +42,7 @@ SERVICE(mem_req0, ARG(MemRequest) req) {
     resp0_valid = true;
 }
 
-SERVICE_READY(mem_resp0, resp0_valid, RESP(MemResponse) resp) {
+SERVICE(mem_resp0, ready=resp0_valid, RESP(MemResponse) resp) {
     resp = resp0;
     resp0_valid = false;
 }
@@ -62,7 +62,7 @@ SERVICE(mem_req1, ARG(MemRequest) req) {
     resp1_valid = true;
 }
 
-SERVICE_READY(mem_resp1, resp1_valid, RESP(MemResponse) resp) {
+SERVICE(mem_resp1, ready=resp1_valid, RESP(MemResponse) resp) {
     resp = resp1;
     resp1_valid = false;
 }

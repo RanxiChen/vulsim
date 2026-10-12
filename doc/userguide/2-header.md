@@ -9,7 +9,7 @@
 
 当使用 `header/` 目录时，目录内 `.h` / `.hpp` 文件会通过 C++ 风格的 `#include` 关系建立解析顺序：被 include 的文件先解析，include 它的文件后解析；循环 include 会报错。每个文件都按旧的 `header.hpp` 规则解析。
 
-全局 `CONFIG` 和全局 bundle（`STRUCT`、`ENUM`、`ALIAS`、`ALIAS_ARRAY1/2`）共享同一个项目级命名域，不允许重名或覆盖；例如 `CONFIG(Word, 32)` 与 `STRUCT(Word)` 会报错。
+全局 `CONFIG` 和全局 bundle（`STRUCT`、`ENUM`、`ALIAS`）共享同一个项目级命名域，不允许重名或覆盖；例如 `CONFIG(Word, 32)` 与 `STRUCT(Word)` 会报错。
 
 项目级 header 的内容主要由一系列宏定义构成，用于声明全局常量、结构体、类型别名等。
 下面列举了所有能用在项目级 header 中的宏定义
@@ -118,38 +118,16 @@ ENUM(MyState) {
 - 常量表达式支持与 `CONFIG` 相同的常量表达式语法
 - 枚举类型可以作为 `STRUCT` 成员类型、事务参数类型、寄存器类型、`QUERY` 返回类型等使用
 
-## ALIAS(name, type)
+## ALIAS(name, type, dims=[])
 
-定义一个类型别名：
-- `name`：别名的名称
-- `type`：被别名的类型，可以是标准整数类型、已定义的结构体类型、bool 类型，或者其他已定义的别名类型
+定义标量或数组类型别名：
 
-等价于：
 ```cpp
-using name = type;
+ALIAS(Word, uint32_t);
+ALIAS(U32x4, uint32_t, dims=[4]);
+ALIAS(Matrix, uint8_t, dims=[2, 3]);
+ALIAS(name=Matrix2, type=uint8_t, dims=[2, 3]);
 ```
 
-## ALIAS_ARRAY1(name, type, N)
+`dims=[]` 或省略维度表示普通别名；多维数组按维度列表嵌套 `std::array`。
 
-定义一个一维数组类型别名：
-- `name`：别名的名称
-- `type`：数组元素的类型，可以是标准整数类型、已定义的结构体类型、bool 类型，或者其他已定义的别名类型
-- `N`：数组的长度，必须是一个常量表达式
-
-等价于：
-```cpp
-using name = std::array<type, N>;
-```
-
-## ALIAS_ARRAY2(name, type, N1, N2)
-
-定义一个二维数组类型别名：
-- `name`：别名的名称
-- `type`：数组元素的类型，可以是标准整数类型、已定义的结构体类型、bool 类型，或者其他已定义的别名类型
-- `N1`：数组的第一维长度，必须是一个常量表达式
-- `N2`：数组的第二维长度，必须是一个常量表达式
-
-等价于：
-```cpp
-using name = std::array<std::array<type, N2>, N1>;
-```

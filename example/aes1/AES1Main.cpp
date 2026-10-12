@@ -6,7 +6,7 @@
 
 // Port
 
-REQUEST_READY(input, ARG(AESData) data, ARG(AESKey) key);
+REQUEST(input, handshake=true, ARG(AESData) data, ARG(AESKey) key);
 
 // Functions
 

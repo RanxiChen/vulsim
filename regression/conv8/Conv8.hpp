@@ -22,8 +22,8 @@ inline Int<8> select_pixel(Int<64> row, int32_t col) {
 QUEUE(input_queue, ConvCommand, 16);
 QUEUE(dma_read_queue, uint32_t, 16);
 
-BRAM(data_mem, Int<64>, BRAM_DEPTH, 1, 1);
-ROM(kernel_rom, 72, KERNEL_COUNT, 1, kernels.hex);
+BRAM(data_mem, Int<64>, BRAM_DEPTH, read_ports=1, write_ports=1);
+ROM(kernel_rom, 72, KERNEL_COUNT, read_ports=1, init=kernels.hex);
 
 REGISTER(busy, bool) { busy = false; }
 REGISTER(done, bool) { done = false; }

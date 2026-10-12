@@ -10,7 +10,7 @@ INTERFACE() {
 
 CHILD_INSTANCE(IncNode, node);
 
-USE_CHILD_SERVICE_PORT(node, inc, node_inc);
+USE_CHILD_SERVICE(node, inc, node_inc);
 
 TICK_IMPL() {
     uint32_t out = 0;

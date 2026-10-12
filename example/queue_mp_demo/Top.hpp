@@ -16,7 +16,7 @@ INTERFACE() {
     SERVICE(clear_push, ARG(U32x3) values, ARG(uint32_t) num);
 }
 
-QUEUE_MP(q, uint32_t, Q_DEPTH, Q_ENQ_WIDTH, Q_DEQ_WIDTH);
+QUEUE(q, uint32_t, Q_DEPTH, enq_width=Q_ENQ_WIDTH, deq_width=Q_DEQ_WIDTH);
 
 SERVICE(push, ARG(U32x3) values, ARG(uint32_t) num) {
     q.enqnext(values, num);

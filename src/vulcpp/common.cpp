@@ -15,14 +15,40 @@
 #include "common.hpp"
 
 #include "../stringop.hpp"
+#include <cctype>
 
 using namespace stringop;
 
 std::optional<pair<string, string>> parseKeyValueArg(const string &raw_arg) {
-    const size_t split_pos = raw_arg.find('=');
-    if (split_pos == string::npos) {
-        return std::nullopt;
+    size_t split_pos = string::npos;
+    int parens = 0, brackets = 0, braces = 0;
+    char quote = 0;
+    bool escape = false;
+    for (size_t i = 0; i < raw_arg.size(); ++i) {
+        const char c = raw_arg[i];
+        if (quote) {
+            if (escape) escape = false;
+            else if (c == '\\') escape = true;
+            else if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '"' || (c == '\'' && !(i && i + 1 < raw_arg.size() &&
+            std::isalnum(static_cast<unsigned char>(raw_arg[i-1])) &&
+            std::isalnum(static_cast<unsigned char>(raw_arg[i+1]))))) { quote = c; continue; }
+        if (c == '(') ++parens;
+        else if (c == ')') --parens;
+        else if (c == '[') ++brackets;
+        else if (c == ']') --brackets;
+        else if (c == '{') ++braces;
+        else if (c == '}') --braces;
+        else if (c == '=' && !parens && !brackets && !braces &&
+                 (i + 1 == raw_arg.size() || raw_arg[i+1] != '=') &&
+                 (i == 0 || string("=!<>+-*/%&|^").find(raw_arg[i-1]) == string::npos)) {
+            split_pos = i;
+            break;
+        }
     }
+    if (split_pos == string::npos) return std::nullopt;
     string key = trim(raw_arg.substr(0, split_pos));
     string value = trim(raw_arg.substr(split_pos + 1));
     if (key.empty()) {
@@ -44,7 +70,6 @@ vector<string> splitTopLevelCsv(const string &raw) {
     int paren_depth = 0;
     int bracket_depth = 0;
     int brace_depth = 0;
-    int angle_depth = 0;
     bool in_string = false;
     bool in_char = false;
     bool escape = false;
@@ -67,7 +92,9 @@ vector<string> splitTopLevelCsv(const string &raw) {
             in_string = true;
             continue;
         }
-        if (c == '\'') {
+        if (c == '\'' && !(i && i + 1 < text.size() &&
+            std::isalnum(static_cast<unsigned char>(text[i-1])) &&
+            std::isalnum(static_cast<unsigned char>(text[i+1])))) {
             in_char = true;
             continue;
         }
@@ -77,22 +104,23 @@ vector<string> splitTopLevelCsv(const string &raw) {
         else if (c == ']' && bracket_depth > 0) --bracket_depth;
         else if (c == '{') ++brace_depth;
         else if (c == '}' && brace_depth > 0) --brace_depth;
-        else if (c == '<') ++angle_depth;
-        else if (c == '>' && angle_depth > 0) --angle_depth;
         else if (c == ',' && paren_depth == 0 && bracket_depth == 0 &&
-                 brace_depth == 0 && angle_depth == 0) {
+                 brace_depth == 0) {
             string item = trim(text.substr(begin, i - begin));
-            if (!item.empty()) out.push_back(std::move(item));
+            out.push_back(std::move(item));
             begin = i + 1;
         }
     }
     string last = trim(text.substr(begin));
-    if (!last.empty()) out.push_back(std::move(last));
+    if (!last.empty() || !out.empty()) out.push_back(std::move(last));
     return out;
 }
 
 void appendDimList(vector<string> &dims, const string &raw_value) {
-    for (auto &dim : splitTopLevelCsv(raw_value)) {
+    const string value = trim(raw_value);
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']')
+        throw VulException("dims requires a bracketed dimension list [...]");
+    for (auto &dim : splitTopLevelCsv(value)) {
         dim = trim(dim);
         if (dim.empty()) {
             throw VulException("empty dimension expression");
@@ -103,8 +131,8 @@ void appendDimList(vector<string> &dims, const string &raw_value) {
 
 bool parseBoolAttribute(const string &key, const string &value) {
     const string v = trim(value);
-    if (v == "1" || v == "true" || v == "TRUE") return true;
-    if (v == "0" || v == "false" || v == "FALSE") return false;
+    if (v == "1" || v == "true") return true;
+    if (v == "0" || v == "false") return false;
     throw VulException("attribute '" + key + "' expects 0/1 or true/false, got '" + value + "'");
 }
 
@@ -124,13 +152,13 @@ pair<string, string> parseParameterOverrideArg(
 ) {
     auto attr = parseKeyValueArg(raw_arg);
     if (!attr) {
-        throw VulException(macro_name + " parameter override expects name=value or PARAM(name)=value, got '" + raw_arg + "'");
+        throw VulException(macro_name + " parameter override expects PARAM(name)=value, got '" + raw_arg + "'");
     }
     string param_name = trim(attr->first);
     string param_value = trim(attr->second);
-    if (param_name.size() > 7 && param_name.rfind("PARAM(", 0) == 0 && param_name.back() == ')') {
-        param_name = trim(param_name.substr(6, param_name.size() - 7));
-    }
+    if (param_name.size() <= 7 || !param_name.starts_with("PARAM(") || param_name.back() != ')')
+        throw VulException(macro_name + " parameter override expects PARAM(name)=value");
+    param_name = trim(param_name.substr(6, param_name.size() - 7));
     if (param_name.empty() || param_value.empty()) {
         throw VulException(macro_name + " has invalid parameter override '" + raw_arg + "'");
     }
@@ -161,24 +189,8 @@ bool parseReqServAttribute(
     const string &value = attr->second;
 
     if (key == "dims") {
-        if (!options.allow_array) throw VulException(macro_name + " does not support dims");
-        if (!reqserv.array_size.empty() || !reqserv.port_dims.empty())
-            throw VulException(macro_name + " dims and array cannot be combined or repeated");
-        if (trim(value).empty() || trim(value).front() != '[' || trim(value).back() != ']')
-            throw VulException(macro_name + " dims requires a nonempty dimension list");
+        if (!options.allow_dims) throw VulException(macro_name + " does not support dims");
         appendDimList(reqserv.port_dims, value);
-        if (reqserv.port_dims.empty()) throw VulException("Empty transaction dims");
-        return true;
-    }
-    if (key == "array") {
-        if (!options.allow_array) {
-            throw VulException(macro_name + " does not support attribute 'array'");
-        }
-        ensureAttrValue(macro_name, key, value);
-        if (!reqserv.array_size.empty() || !reqserv.port_dims.empty()) {
-            throw VulException(macro_name + " array size is specified more than once");
-        }
-        reqserv.array_size = trim(value);
         return true;
     }
     if (key == "handshake") {
@@ -220,16 +232,6 @@ void parseReqArgsAndRets(
     for (; i < macro_args.size(); ++i) {
         const string &arg_decl_raw = macro_args[i];
         const string arg_decl = trim(arg_decl_raw);
-        if (arg_decl.size() > 7 && arg_decl.rfind("ARRAY(", 0) == 0 && arg_decl.back() == ')') {
-            if (!reqserv.array_size.empty() || !reqserv.port_dims.empty()) {
-                throw VulException(macro_name + " array size is specified more than once");
-            }
-            reqserv.array_size = trim(arg_decl.substr(6, arg_decl.size() - 7));
-            if (reqserv.array_size.empty()) {
-                throw VulException("empty ARRAY() expression");
-            }
-            continue;
-        }
         if (options != nullptr && parseReqServAttribute(reqserv, *options, macro_name, arg_decl)) {
             continue;
         }

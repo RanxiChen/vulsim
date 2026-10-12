@@ -17,6 +17,6 @@ void sim_exit();
 
 #define GLOBAL() inline namespace global
 
-#define TOP(relapath)
+#define TOP(path)
 
-#define PROJECT(relapath)
+#define PROJECT(path)

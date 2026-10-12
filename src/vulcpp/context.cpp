@@ -22,7 +22,7 @@ string VCPPModuleContext::getOriginalPosition(const cppparse::LinePosition &pos)
     if (pos.line < 0 || pos.line >= static_cast<int32_t>(line_mapping.size())) {
         return "Line " + std::to_string(pos.line + 1) + ":" + std::to_string(pos.column + 1);
     }
-    return "Line " + std::to_string(line_mapping[pos.line]) + ":" + std::to_string(pos.column + 1);
+    return "Line " + std::to_string(line_mapping[pos.line] + 1) + ":" + std::to_string(pos.column + 1);
 }
 
 VulDebugLoc VCPPModuleContext::toDebugLoc(const cppparse::LinePosition &pos) const {
@@ -167,7 +167,7 @@ string VCPPTestContext::getOriginalPosition(const cppparse::LinePosition &pos) c
     if (pos.line < 0 || pos.line >= static_cast<int32_t>(line_mapping.size())) {
         return "Line " + std::to_string(pos.line + 1) + ":" + std::to_string(pos.column + 1);
     }
-    return "Line " + std::to_string(line_mapping[pos.line]) + ":" + std::to_string(pos.column + 1);
+    return "Line " + std::to_string(line_mapping[pos.line] + 1) + ":" + std::to_string(pos.column + 1);
 }
 
 VulDebugLoc VCPPTestContext::toDebugLoc(const cppparse::LinePosition &pos) const {

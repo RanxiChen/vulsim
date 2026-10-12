@@ -16,4 +16,4 @@ STRUCT(ProxyPayload) {
     ProxyMeta meta;
 };
 
-ALIAS_ARRAY1(PayloadPair, ProxyPayload, 2);
+ALIAS(PayloadPair, ProxyPayload, dims=[2]);

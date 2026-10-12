@@ -15,6 +15,7 @@
 #include "versioning.hpp"
 
 #include "common.hpp"
+#include "declaration_args.hpp"
 #include "../stringop.hpp"
 
 using namespace cppparse;
@@ -30,8 +31,10 @@ bool macroHasReadyAttribute(const MacroEntry &entry) {
     return false;
 }
 
-vector<MacroEntry> parseNestedMacroEntriesPreservingPositions(const MacroEntry &entry) {
-    return findAllMacroEntriesPreservingLinePositions(entry.body, entry.body_pos);
+vector<MacroEntry> parseNestedMacroEntriesPreservingPositions(const MacroEntry &entry, const VCPPModuleContext &context) {
+    auto entries = findAllMacroEntriesPreservingLinePositions(entry.body, entry.body_pos);
+    for (auto &nested : entries) nested = normalizeDeclaration(nested, context.getOriginalPosition(nested.pos));
+    return entries;
 }
 InterfaceEntries parseInterfaceEntries(
     const MacroEntry &interface_entry,
@@ -45,7 +48,7 @@ InterfaceEntries parseInterfaceEntries(
     }
 
     InterfaceEntries out;
-    vector<MacroEntry> interface_entries = parseNestedMacroEntriesPreservingPositions(interface_entry);
+    vector<MacroEntry> interface_entries = parseNestedMacroEntriesPreservingPositions(interface_entry, context);
     for (const auto &entry : interface_entries) {
         if (entry.name != "PARAMETER" && entry.name != "REQUEST" && entry.name != "SERVICE") {
             throw VulException(
@@ -219,7 +222,7 @@ vector<MacroEntry> selectVersionedModuleEntries(
         throw VulException("USE_VERSION selects VERSION '" + selected_version + "', but no such VERSION block exists");
     }
 
-    vector<MacroEntry> version_entries = parseNestedMacroEntriesPreservingPositions(*selected_version_entry);
+    vector<MacroEntry> version_entries = parseNestedMacroEntriesPreservingPositions(*selected_version_entry, context);
     validateInterfaceImplementationEntries(version_entries, interface_data.service_names, context, "VERSION block");
 
     vector<MacroEntry> selected_entries;

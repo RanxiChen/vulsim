@@ -110,7 +110,7 @@ void checkModuleSymbols(
     std::unordered_set<std::string> child_service_aliases;
     for (const auto &use : module.child_service_uses) {
         if (child_service_aliases.insert(use.alias_name).second) {
-            declare_local(use.alias_name, "USE_CHILD_SERVICE_PORT");
+            declare_local(use.alias_name, "USE_CHILD_SERVICE");
         }
     }
     std::unordered_set<std::string> child_query_aliases;

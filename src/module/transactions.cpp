@@ -23,8 +23,7 @@ VulStaticReqServ staticalizeReqServ(const VulTempReqServBase &item, const VulSta
     static_req.array_size = 1;
     static_req.has_handshake = item.has_handshake;
     static_req.param_order = item.param_order;
-    auto dims = item.port_dims;
-    if (!item.array_size.empty()) dims = {item.array_size};
+    const auto &dims = item.port_dims;
     for (const auto &expr : dims) {
         auto dim = calculateConstexprValue(expr, config_lib);
         if (dim <= 0 || uint64_t(dim) > UINT32_MAX / uint64_t(static_req.array_size))

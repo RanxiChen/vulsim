@@ -74,7 +74,7 @@ always_comb begin
         size_n = size_n - 1;
     end
 
-    if (enq_accepted && (size_n < Depth)) begin
+    if (enq_accepted && !clrnext && (size_n < Depth)) begin
         data_d[tail_n] = enqnext_data;
         if (tail_n + 1 == Depth) begin
             tail_n = 0;
@@ -241,7 +241,8 @@ always_comb begin
     end
 
     can_push = Depth - size_n;
-    push_num = (enq_accepted < can_push) ? enq_accepted : can_push;
+    // Clear takes precedence over pending enqueue, as in the C++ runtime.
+    push_num = clrnext ? 0 : ((enq_accepted < can_push) ? enq_accepted : can_push);
     for (int i = 0; i < push_num; i = i + 1) begin
         data_d[tail_n] = enqnext_data[i];
         if (tail_n + 1 == Depth) begin
@@ -303,11 +304,10 @@ always_comb begin
 
     enqready = enq_rdy_cnt;
 
-    if (deqnext_vld != '0) begin
-        deqready = '0;
-    end else begin
-        deqready = deq_valid_num_q;
-    end
+    // Like VulQueueMP::deqvalid(), report the registered count throughout the
+    // cycle. A pending dequeue must not erase the value read by the same
+    // transaction before the next clock edge.
+    deqready = deq_valid_num_q;
 
     for (int i = 0; i < DeqWidth; i = i + 1) begin
         deqnext_data[i] = deq_buf_q[i];

@@ -18,7 +18,7 @@ QUEUE(name, type, depth);
 
 // 定义一个多宽队列：深度 depth，每周期最多 enqwidth 个入队、deqwidth 个出队
 // depth/enqwidth/deqwidth 都必须是编译期常量，且都 >= 1
-QUEUE_MP(name, type, depth, enqwidth, deqwidth);
+QUEUE(name, type, depth, enq_width=enqwidth, deq_width=deqwidth);
 ```
 
 ## 7.2 单宽队列 `VulQueue` 接口
@@ -105,7 +105,7 @@ void clrnext();
 CONFIG(QUEUE_SIZE, 8);
 QUEUE(q, uint32_t, QUEUE_SIZE);
 
-SERVICE_READY(deq, q.deqvalid(), RESP(uint32_t) data) {
+SERVICE(deq, ready=q.deqvalid(), RESP(uint32_t) data) {
     data = q.front();
     q.deqnext();
 }
@@ -125,12 +125,12 @@ TICK_IMPL() {
 这个模块做了两件事：
 
 1. 每隔一个周期向队列入队一个 `cycle` 值。
-2. 通过 `SERVICE_READY(deq, q.deqvalid(), ...)` 把 `deqvalid()` 直接作为服务就绪条件，只有可出队时才允许外部调用 `deqnext()`。
+2. 通过 `SERVICE(deq, ready=q.deqvalid(), ...)` 把 `deqvalid()` 直接作为服务就绪条件，只有可出队时才允许外部调用 `deqnext()`。
 
 ### 7.5.2 消费端按节拍读取（`Reader.hpp`）
 
 ```cpp
-REQUEST_READY(deq, RESP(uint32_t) data);
+REQUEST(deq, handshake=true, RESP(uint32_t) data);
 REQUEST(output, ARG(uint32_t) data);
 
 TICK_IMPL() {

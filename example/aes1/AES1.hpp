@@ -16,17 +16,17 @@ INTERFACE() {
 
 // Register
 
-REGISTER_MUL(d, AESData, 2) {
+REGISTER(d, AESData, ports=2) {
     for (uint32_t i = 0; i < 16; i++) {
         d[i] = 0;
     }
 }
-REGISTER_MUL(k, AESKey, 2) {
+REGISTER(k, AESKey, ports=2) {
     for (uint32_t i = 0; i < 16; i++) {
         k[i] = 0;
     }
 }
-REGISTER_MUL(state, uint32_t, 2) {
+REGISTER(state, uint32_t, ports=2) {
     state = 0;
 }
 

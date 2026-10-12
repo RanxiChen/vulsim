@@ -7,7 +7,7 @@ INTERFACE() {
     SERVICE(write, ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
 }
 
-REGISTER_ARRAY1(regs, uint64_t, 32, 1) {
+REGISTER(regs, uint64_t, ports=1, dims=[32]) {
     for (int i = 0; i < 32; ++i) {
         regs[i] = 0;
     }

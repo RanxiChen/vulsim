@@ -14,7 +14,7 @@ REGISTER(mirror, uint32_t) {
 
 CHILD_INSTANCE(CounterNode, node);
 
-USE_CHILD_SERVICE_PORT(node, push, node_push, ARG(uint32_t) data);
+USE_CHILD_SERVICE(node, push, node_push, ARG(uint32_t) data);
 USE_CHILD_QUERY(node, snapshot, node_snapshot, ChildSnapshot);
 
 QUERY(snapshot, TopSnapshot) {

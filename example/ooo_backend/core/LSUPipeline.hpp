@@ -24,7 +24,7 @@ STRUCT(LSUSlot) {
 QUEUE(issueq, FuRequest, INPUT_DEPTH);
 QUEUE(resultq, WritebackEvent, RESULT_DEPTH);
 
-REGISTER_ARRAY1(slot_state, LSUSlot, PIPE_SLOTS, 1) {
+REGISTER(slot_state, LSUSlot, ports=1, dims=[PIPE_SLOTS]) {
     for (int i = 0; i < PIPE_SLOTS; ++i) {
         slot_state[i].valid = false;
         slot_state[i].waiting_mem = false;

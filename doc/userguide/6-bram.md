@@ -8,14 +8,14 @@
 
 ```cpp
 // 多端口 BRAM：datatype 是数据类型（例如 UInt<32>）
-BRAM(name, datatype, size, readports, writeports);
+BRAM(name, datatype, size, read_ports=readports, write_ports=writeports);
 
 // 单端口 1RW BRAM：datatype 是数据类型（例如 UInt<32>）
-BRAM_1RW(name, datatype, size);
+BRAM(name, datatype, size, mode=1rw);
 
 // ROM：datawidth/size/readports 为编译期常量
-// init_path 会被宏自动字符串化，写法示例见下文（不加双引号）
-ROM(name, datawidth, size, readports, init_path);
+// init 使用资源路径；vul 接受原有路径写法，位置写法的 IDE 检查需要字符串字面量。
+ROM(name, datawidth, size, read_ports=readports, init=init_path);
 ```
 
 这里的 `size` 表示存储体元素个数，不是地址位宽。地址类型位宽由库内部按 `log2ceil(size)` 自动推导。
@@ -53,7 +53,7 @@ void write(const UInt<addrwidth> &addr, const datatype &data);
 示例：
 
 ```cpp
-BRAM(myram, UInt<32>, 1024, 2, 1);
+BRAM(myram, UInt<32>, 1024, read_ports=2, write_ports=1);
 
 TICK_IMPL() {
     UInt<32> data0 = myram.readdata<0>(); // 上周期在端口0发的读请求在本周期返回数据
@@ -88,7 +88,7 @@ const datatype& readdata() const;
 示例：
 
 ```cpp
-BRAM_1RW(myram, UInt<32>, 1024);
+BRAM(myram, UInt<32>, 1024, mode=1rw);
 
 TICK_IMPL() {
     myram.req(0x3FF, 0xDEADBEEF, true);
@@ -115,7 +115,7 @@ const UInt<datawidth> readdata() const;
 声明示例：
 
 ```cpp
-ROM(inst_rom, 32, 1024, 1, data/program.hex);
+ROM(inst_rom, 32, 1024, read_ports=1, init=data/program.hex);
 ```
 
 说明：

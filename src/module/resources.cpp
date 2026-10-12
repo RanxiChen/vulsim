@@ -73,12 +73,16 @@ void staticalizeResources(InstantiationContext &ctx) {
             throw VulException("BRAM addr_size must be greater than 1");
         }
         static_bram.addr_width = static_cast<ConfigRealValue>(log2ceil(static_cast<uint64_t>(static_bram.addr_size)));
-        if (bram.read_ports.empty() || bram.write_ports.empty()) {
+        const auto read_ports = calculateConstexprValue(bram.read_ports, local_config_lib);
+        const auto write_ports = calculateConstexprValue(bram.write_ports, local_config_lib);
+        if (bram.mode_1rw) {
+            if (read_ports != 1 || write_ports != 1)
+                throw VulException("BRAM mode=1rw requires read_ports=1 and write_ports=1");
             static_bram.read_ports = 0;
             static_bram.write_ports = 0;
         } else {
-            static_bram.read_ports = calculateConstexprValue(bram.read_ports, local_config_lib);
-            static_bram.write_ports = calculateConstexprValue(bram.write_ports, local_config_lib);
+            static_bram.read_ports = read_ports;
+            static_bram.write_ports = write_ports;
         }
         instance.brams.push_back(std::move(static_bram));
     }

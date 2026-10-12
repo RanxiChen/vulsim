@@ -12,7 +12,7 @@ STRUCT(S0S1RegData) {
     uint32_t a;
     uint32_t b;
 };
-REGISTER_MUL(s1valid, bool, 2) {
+REGISTER(s1valid, bool, ports=2) {
     s1valid = false;
 };
 REGISTER(s1reg, S0S1RegData) {

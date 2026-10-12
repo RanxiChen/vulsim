@@ -158,7 +158,6 @@ struct VulReqServParamRef {
 
 struct VulTempReqServBase {
     string name;
-    string array_size; // empty means non-arrayed request/service port
     vector<string> port_dims;
     vector<pair<string, string>> args; // pair of argument type and name
     vector<pair<string, string>> rets; // pair of response type and name
@@ -251,7 +250,8 @@ struct VulTempChildServiceUse {
     string instance_expr;
     string service_name;
     string alias_name;
-    string array_size;
+    vector<string> dims;
+    bool has_dims = false;
 };
 
 struct VulTempChildQueryUse {
@@ -259,7 +259,8 @@ struct VulTempChildQueryUse {
     string query_name;
     string alias_name;
     string ret_type;
-    string array_size;
+    vector<string> dims;
+    bool has_dims = false;
 };
 
 struct VulTempBRAM {
@@ -268,6 +269,7 @@ struct VulTempBRAM {
     string addr_size;
     string read_ports;
     string write_ports;
+    bool mode_1rw = false;
 };
 
 struct VulTempDigitalROM {

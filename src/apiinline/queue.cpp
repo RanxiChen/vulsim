@@ -226,10 +226,10 @@ string queuePortHelpers(const QueueInfo &info) {
     std::ostringstream os;
     os << (is_mp ? "uint32_t " : "bool ") << "__vul_queue_enqready_"
        << info.queue->name << "() {\n";
-    os << "  return " << info.enqready << ";\n}\n";
+    os << "  return " << info.enqready << (is_mp ? ".template to<uint32_t>()" : "") << ";\n}\n";
     os << (is_mp ? "uint32_t " : "bool ") << "__vul_queue_deqvalid_"
        << info.queue->name << "() {\n";
-    os << "  return " << info.deqvalid << ";\n}\n";
+    os << "  return " << info.deqvalid << (is_mp ? ".template to<uint32_t>()" : "") << ";\n}\n";
     if (is_mp) {
         os << "void __vul_queue_enqnext_" << info.queue->name
            << "(std::array<" << info.type_str << ", " << enq_width

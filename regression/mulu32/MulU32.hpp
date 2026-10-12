@@ -14,7 +14,7 @@ STRUCT(S0S1RegData) {
 };
 
 // All registers default to zero after reset unless a reset block overrides it.
-REGISTER_MUL(s1valid, bool, 2);
+REGISTER(s1valid, bool, ports=2);
 REGISTER(s1reg, S0S1RegData);
 
 SERVICE(s0input, ARG(uint32_t) a, ARG(uint32_t) b) {

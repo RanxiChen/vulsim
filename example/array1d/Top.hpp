@@ -12,9 +12,9 @@ REGISTER(cycle, uint32_t) {
     cycle = 0;
 }
 
-CHILD_INSTANCE_ARRAY1(LineNode, lane, LEN);
+CHILD_INSTANCE(LineNode, lane, dims=[LEN]);
 
-USE_CHILD_SERVICE_PORT(lane[0], left_in, lane0_in);
+USE_CHILD_SERVICE(lane[0], left_in, lane0_in);
 
 CONNECT_CR_CS(lane[$], right_out, lane[$+1], left_in);
 CONNECT_CR_R(lane[LEN-1], right_out, print);

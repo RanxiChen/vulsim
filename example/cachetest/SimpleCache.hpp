@@ -27,8 +27,8 @@ STRUCT(TagEntry) {
 
 // Register
 
-BRAM(tag_array, TagEntry, INDEX_SIZE, 1, 1);
-BRAM(data_array, Int<DATA_WIDTH>, INDEX_SIZE, 1, 1);
+BRAM(tag_array, TagEntry, INDEX_SIZE, read_ports=1, write_ports=1);
+BRAM(data_array, Int<DATA_WIDTH>, INDEX_SIZE, read_ports=1, write_ports=1);
 
 REGISTER(read_stage, ReadStageReg) {
     read_stage.addr = 0;

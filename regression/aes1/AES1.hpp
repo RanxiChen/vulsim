@@ -16,9 +16,9 @@ INTERFACE() {
 
 // Register
 
-REGISTER_MUL(d, AESData, 2);
-REGISTER_MUL(k, AESKey, 2);
-REGISTER_MUL(state, uint32_t, 2);
+REGISTER(d, AESData, ports=2);
+REGISTER(k, AESKey, ports=2);
+REGISTER(state, uint32_t, ports=2);
 
 // Port
 

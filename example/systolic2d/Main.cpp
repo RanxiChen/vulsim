@@ -5,7 +5,7 @@ GLOBAL() {
     uint32_t tick = 0;
 }
 
-SERVICE(print, ARRAY(HEI), ARG(uint32_t) data) {
+SERVICE(print, dims=[HEI], ARG(uint32_t) data) {
     printf("systolic2d tick=%u row=%u data=%u\n", tick, IDX, data);
 }
 

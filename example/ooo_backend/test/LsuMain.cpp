@@ -15,8 +15,8 @@ GLOBAL() {
     MemResponse pending_resp{};
 }
 
-REQUEST_READY(issue, ARG(FuRequest) req);
-REQUEST_READY(pop_result, RESP(WritebackEvent) wb);
+REQUEST(issue, handshake=true, ARG(FuRequest) req);
+REQUEST(pop_result, handshake=true, RESP(WritebackEvent) wb);
 QUERY(status, UnitStatus);
 
 SERVICE(mem_req, ARG(MemRequest) req) {
@@ -37,7 +37,7 @@ SERVICE(mem_req, ARG(MemRequest) req) {
     have_resp = true;
 }
 
-SERVICE_READY(mem_resp, have_resp, RESP(MemResponse) resp) {
+SERVICE(mem_resp, ready=have_resp, RESP(MemResponse) resp) {
     resp = pending_resp;
     have_resp = false;
 }

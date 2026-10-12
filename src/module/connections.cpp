@@ -428,29 +428,18 @@ void staticalizeConnections(InstantiationContext &ctx) {
     }
 
     // child service uses
-    auto check_child_alias_array_size = [&](const string &macro_name,
-                                            const string &alias_name,
-                                            const string &array_expr,
-                                            ConfigRealValue expected_size) {
-        if (array_expr.empty()) {
-            return;
+    auto check_child_alias_dims = [&](const string &macro, const string &alias,
+                                      const vector<string> &dims, bool explicit_dims,
+                                      const vector<ConfigRealValue> &shape) {
+        if (!explicit_dims) return;
+        vector<ConfigRealValue> declared;
+        for (const auto &dim : dims) {
+            auto value = calculateConstexprValue(dim, local_config_lib);
+            if (value <= 0) throw VulException(macro + " dims for alias '" + alias + "' must be positive");
+            declared.push_back(value);
         }
-        ConfigRealValue explicit_size = calculateConstexprValue(array_expr, local_config_lib);
-        if (explicit_size <= 0) {
-            throw VulException(macro_name + " array size for alias '" + alias_name + "' must be positive");
-        }
-        if (explicit_size != expected_size) {
-            throw VulException(macro_name + " array size for alias '" + alias_name +
-                               "' does not match wildcard instance dimension");
-        }
-    };
-    auto reject_child_alias_array_size = [&](const string &macro_name,
-                                             const string &alias_name,
-                                             const string &array_expr) {
-        if (!array_expr.empty()) {
-            throw VulException(macro_name + " array=<N> for alias '" + alias_name +
-                               "' requires exactly one '*' wildcard in instance expression");
-        }
+        if (declared != shape)
+            throw VulException(macro + " dims for alias '" + alias + "' do not match wildcard shape");
     };
 
     instance.child_service_uses.clear();
@@ -466,10 +455,8 @@ void staticalizeConnections(InstantiationContext &ctx) {
             if (stringop::trim(expr.index_exprs[d]) == "*") shape.push_back(decl.array_dims[d]);
         instance.child_service_shapes[temp_use.alias_name] = shape;
         ConfigRealValue count = 1; for (auto dim : shape) count *= dim;
-        if (!temp_use.array_size.empty()) {
-            if (shape.size() != 1 || calculateConstexprValue(temp_use.array_size, local_config_lib) != count)
-                throw VulException("USE_CHILD_SERVICE array size does not match wildcard shape");
-        }
+        check_child_alias_dims("USE_CHILD_SERVICE", temp_use.alias_name,
+                               temp_use.dims, temp_use.has_dims, shape);
         for (uint32_t i = 0; i < count; ++i) {
             const auto wild = portCoordinates(i, shape);
             vector<ConfigRealValue> coords; size_t w = 0;
@@ -506,7 +493,7 @@ void staticalizeConnections(InstantiationContext &ctx) {
             if (child_decl.isArrayed()) {
                 throw VulException("Array child instance '" + child_expr.base_name + "' requires explicit indices in USE_CHILD_QUERY");
             }
-            reject_child_alias_array_size("USE_CHILD_QUERY", temp_use.alias_name, temp_use.array_size);
+            check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name, temp_use.dims, temp_use.has_dims, {});
             materialize_use(child_expr.base_name, 0, false);
             continue;
         }
@@ -522,14 +509,14 @@ void staticalizeConnections(InstantiationContext &ctx) {
             if (!tryResolveConcreteInstance(child_expr, child_decl, local_config_lib, {}, concrete_name)) {
                 throw VulException("Indexed child instance out of range in USE_CHILD_QUERY");
             }
-            reject_child_alias_array_size("USE_CHILD_QUERY", temp_use.alias_name, temp_use.array_size);
+            check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name, temp_use.dims, temp_use.has_dims, {});
             materialize_use(concrete_name, 0, false);
             continue;
         }
 
         const size_t wildcard_dim = wildcard_dims[0];
-        check_child_alias_array_size("USE_CHILD_QUERY", temp_use.alias_name,
-                                     temp_use.array_size, child_decl.array_dims[wildcard_dim]);
+        check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name,
+                               temp_use.dims, temp_use.has_dims, {child_decl.array_dims[wildcard_dim]});
         for (ConfigRealValue wildcard_idx = 0; wildcard_idx < child_decl.array_dims[wildcard_dim]; ++wildcard_idx) {
             vector<ConfigRealValue> concrete_indices;
             concrete_indices.reserve(child_expr.index_exprs.size());

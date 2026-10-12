@@ -15,6 +15,7 @@
 #include "module_parser.hpp"
 
 #include "context.hpp"
+#include "declaration_args.hpp"
 #include "module_handlers.hpp"
 #include "versioning.hpp"
 #include "../cppparse.hpp"
@@ -41,6 +42,10 @@ VulTempModule parseTempModule(
     code_lines = std::move(trim_res.lines);
 
     vector<MacroEntry> macro_entries = findAllMacroEntries(code_lines);
+    for (auto &entry : macro_entries) {
+        VulErrorContextGuard declaration_context{"Declaration at " + context.getOriginalPosition(entry.pos)};
+        entry = normalizeDeclaration(entry, context.getOriginalPosition(entry.pos));
+    }
     if (!is_global_header) {
         macro_entries = selectVersionedModuleEntries(macro_entries, context);
     }

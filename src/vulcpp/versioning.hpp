@@ -20,7 +20,7 @@
 #include <vector>
 
 bool macroHasReadyAttribute(const cppparse::MacroEntry &entry);
-vector<cppparse::MacroEntry> parseNestedMacroEntriesPreservingPositions(const cppparse::MacroEntry &entry);
+vector<cppparse::MacroEntry> parseNestedMacroEntriesPreservingPositions(const cppparse::MacroEntry &entry, const VCPPModuleContext &context);
 
 struct InterfaceEntries {
     vector<cppparse::MacroEntry> entries;

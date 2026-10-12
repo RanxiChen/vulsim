@@ -33,7 +33,7 @@ REGISTER(cycle, uint8_t); // cycle 寄存器，默认复位值为 0
 REGISTER(count, uint8_t); // count 寄存器，默认复位值为 0
 
 // 定义 Producer 模块对外的事务接口
-REQUEST_READY(send, ARG(uint8_t) d); // 这个模块可能会触发一个 send 事务，参数是一个 uint8_t 类型的数据 d，事务包含一个 bool 返回值作为 valid-ready 握手行为
+REQUEST(send, handshake=true, ARG(uint8_t) d); // 这个模块可能会触发一个 send 事务，参数是一个 uint8_t 类型的数据 d，事务包含一个 bool 返回值作为 valid-ready 握手行为
 
 // 定义 Producer 模块的行为
 // TICK_IMPL 定义了模块在每个时钟周期应该执行的行为
@@ -57,17 +57,17 @@ REGISTER(sum, uint8_t);
 // 定义 Consumer 模块对外的事务接口
 REQUEST(output, void, ARG(uint8_t) s); // 这个模块可能会触发一个 output 事务，参数是一个 uint8_t 类型的数据 s，事务不包含 valid-ready 握手行为
 
-SERVICE_READY(recv, (cycle & 1) == 0, ARG(uint8_t) d) {
-    // 这个模块可以响应一个 recv 事务，参数是一个 uint8_t 类型的数据 d，_READY 表示事务包含一个 valid-ready 握手行为， 只有当握手条件 "(cycle & 1) == 0" 成立时才会成功响应事务
+SERVICE(recv, ready=((cycle & 1) == 0), ARG(uint8_t) d) {
+    // 这个模块可以响应一个 recv 事务，参数是一个 uint8_t 类型的数据 d，ready=条件 表示事务包含一个 valid-ready 握手行为， 只有当握手条件 "(cycle & 1) == 0" 成立时才会成功响应事务
     // 事务被成功触发时进行的行为
-    sum_setnext(sum + d);
+    sum.setnext(sum + d);
     output(sum); // 触发一个 output 事务，参数是 sum 寄存器的当前值
 }
 
 // 定义 Consumer 模块的行为
 // TICK_IMPL 定义了模块在每个时钟周期应该执行的行为
 TICK_IMPL() {
-    cycle_setnext(cycle + 1);
+    cycle.setnext(cycle + 1);
 }
 ```
 
