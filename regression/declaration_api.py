@@ -42,8 +42,12 @@ int main() {
     equivalent("ROM(r, 32, 8, 2, \"a=b.hex\");", "ROM(init=\"a=b.hex\", size=8, name=r, read_ports=2, data_width=32);");
     equivalent("QUEUE(q, uint8_t, 8, 2, 3);", "QUEUE(type=uint8_t, name=q, deq_width=3, depth=8, enq_width=2);");
     equivalent("BRAM(r, uint32_t, 8, 1, 1, 1rw);", "BRAM(name=r, type=uint32_t, size=8, mode=1rw, read_ports=1, write_ports=1);");
-    equivalent("CHILD_INSTANCE(Node, n, [2], PARAM(W)=8, COORD(0)=ROW);",
-               "CHILD_INSTANCE(name=n, module=Node, dims=[2], PARAM(W)=8, COORD(0)=ROW);");
+    equivalent("CHILD_INSTANCE(Node, n, [2], PARAM(W)=8, PARAM(ROW)=COORD(0));",
+               "CHILD_INSTANCE(name=n, module=Node, dims=[2], PARAM(W)=8, PARAM(ROW)=COORD(0));");
+    equivalent("CHILD_INSTANCE(Node, n, PARAM( ROW )=COORD(0));",
+               "CHILD_INSTANCE(Node, n, PARAM(ROW)=COORD(0));");
+    check(parseCoordinateBindingValue(" COORD ( 1 + clog2(2) ) ") == std::optional<std::string>{"1 + clog2(2)"}, "coordinate dimension expression");
+    check(!parseCoordinateBindingValue("WIDTH+1") && !parseCoordinateBindingValue("COORD_WIDTH"), "constant parameter must remain an expression");
     equivalent("CONNECT_CR_CS(a, out, b, in);", "CONNECT_CR_CS(dstserv=in, dstchild=b, srcchild=a, srcreq=out);");
     equivalent("CONNECT_CR_S(a, out, in);", "CONNECT_CR_S(dstserv=in, srcchild=a, srcreq=out);");
     equivalent("CONNECT_CR_R(a, out, exposed);", "CONNECT_CR_R(dstreq=exposed, srcchild=a, srcreq=out);");
@@ -87,6 +91,13 @@ int main() {
     rejected("ROM(r, 32, 8);", "requires parameter 'init'");
     rejected("CHILD_INSTANCE(N, n, WIDTH=32);", "PARAM(name)=value");
     rejected("CHILD_INSTANCE(N, n, PARAM(W)=2, PARAM(W)=3);", "specified more than once");
+    rejected("CHILD_INSTANCE(N, n, COORD(0)=ROW);", "use PARAM(name)=COORD(dim)");
+    rejected("CHILD_INSTANCE(N, n, PARAM(ROW)=COORD(0), PARAM(ROW)=3);", "specified more than once");
+    rejected("CHILD_INSTANCE(N, n, PARAM(ROW)=3, PARAM(ROW)=COORD(0));", "specified more than once");
+    rejected("CHILD_INSTANCE(N, n, PARAM( ROW )=COORD(0), PARAM(ROW)=3);", "specified more than once");
+    rejected("CHILD_INSTANCE(N, n, PARAM(ROW)=COORD());", "dimension cannot be empty");
+    rejected("CHILD_INSTANCE(N, n, PARAM(ROW)=COORD(0)+1);", "without trailing expressions");
+    rejected("CHILD_INSTANCE(N, n, PARAM(ROW)=COORD(0,1));", "exactly one dimension expression");
     rejected("SERVICE(s, ARG(uint32_t) x, ready=true) {}", "attributes must precede");
     rejected("HELPER(1) {}", "too many positional");
     rejected("REGISTER(r,);", "empty argument");

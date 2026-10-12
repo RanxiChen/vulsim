@@ -7,7 +7,7 @@ INTERFACE() {
     SERVICE(capture2, dims=[4], ARG(uint32_t) data);
     QUERY(snapshot, ArraySnapshot);
 }
-CHILD_INSTANCE(PE, arr1, dims=[8], COORD(0)=ROW);
+CHILD_INSTANCE(PE, arr1, dims=[8], PARAM(ROW)=COORD(0));
 CHILD_INSTANCE(PE, arr2, dims=[4]);
 CONNECT_S_CS(submit1, arr1[*], submit);
 CONNECT_S_CS(submit2, arr2[*], submit);

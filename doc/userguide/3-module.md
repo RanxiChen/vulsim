@@ -480,7 +480,7 @@ TICK_IMPL() {
 
 ## 3.7 子实例与子接口引入
 
-### CHILD_INSTANCE(module, name, dims=[...], PARAM(param)=value, COORD(dim)=param, ..., ...)
+### CHILD_INSTANCE(module, name, dims=[...], PARAM(param)=value, ...)
 
 定义子模块实例：
 
@@ -496,7 +496,7 @@ CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID], PARAM(WIDTH)=32);
 - `name`：子实例名称。
 - `dims`：子实例数组维度。省略时为标量子实例。
 - `PARAM(param)=value`：覆盖子模块中的 `PARAMETER`。
-- `COORD(dim)=param`：将本级数组坐标绑定到子模块已有 `PARAMETER`；可只绑定部分维度，绑定参数不能再通过 `PARAM` 覆盖。绑定参数可显式下传，内部坐标不自动成为下级普通参数。详见第 8 章。
+- `PARAM(param)=COORD(dim)`：将本级数组坐标绑定到子模块已有 `PARAMETER`；可只绑定部分维度，同一 `PARAM(param)` 只能赋值一次，常量赋值与坐标绑定互斥。绑定参数可显式下传，内部坐标不自动成为下级普通参数。详见第 8 章。
 
 ### USE_CHILD_SERVICE(instance, service, alias, dims=[N], ARG(...), RESP(...))
 

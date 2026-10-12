@@ -49,7 +49,7 @@ TOP = '''INTERFACE() {
 USE_VERSION(selected);
 VERSION(unused) { }
 VERSION(selected) {
-    CHILD_INSTANCE(Leaf, mesh, dims=[2,3], COORD(0)=ROW, COORD(1)=COL);
+    CHILD_INSTANCE(Leaf, mesh, dims=[2,3], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(1));
     CHILD_INSTANCE(Leaf, one, dims=[1]);
     USE_CHILD_QUERY(one[*], scalar, one_snapshot, Int<WIDTH>);
     USE_CHILD_QUERY(mesh[*][*], scalar, scalar_snapshot, Int<WIDTH>, dims=[2,3]);

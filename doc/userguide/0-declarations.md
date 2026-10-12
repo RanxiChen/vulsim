@@ -42,7 +42,7 @@ REGISTER(name=counter, ports=2, type=uint32_t);
 - 维度必须写成 `dims=[N0,N1,...]`。显式空列表 `[]` 表示标量；数组维度必须是正整数常量表达式。省略普通声明的 dims 表示标量；省略子接口引出的 dims 则按通配实例推断。
 - 事务业务参数使用 `ARG(T) x`、`RESP(T) y`，位于所有属性之后，按源码顺序形成调用签名。可以不提供任何业务参数。
 - `handshake` 接受 `true/false` 或 `1/0`。SERVICE 的 `ready=条件` 隐含握手；与显式 `handshake=false` 冲突。握手 SERVICE 实现必须有 ready 条件，前置声明不能有 ready。
-- 子模块参数覆盖只接受 `PARAM(name)=value`；坐标绑定只接受 `COORD(dim)=parameter`。二者是 CHILD_INSTANCE 的命名尾参数，可交错出现，不能重复。
+- 子模块参数统一使用 `PARAM(name)=value`：普通值为常量表达式，坐标绑定使用 `PARAM(name)=COORD(dim)`。每个参数只允许赋值一次。
 - BRAM 的 mode 只接受 `generic`、`1rw`；1rw 模式要求 read_ports 和 write_ports 求值后均为 1。
 
 ```cpp
@@ -50,7 +50,7 @@ REQUEST(fetch, handshake=true, dims=[2,3], ARG(uint32_t) address, RESP(uint32_t)
 SERVICE(fetch, ready=true, dims=[2,3], ARG(uint32_t) address, RESP(uint32_t) data) {
     data = address;
 }
-CHILD_INSTANCE(Node, lane, dims=[4], PARAM(WIDTH)=32, COORD(0)=ROW);
+CHILD_INSTANCE(Node, lane, dims=[4], PARAM(WIDTH)=32, PARAM(ROW)=COORD(0));
 BRAM(memory, uint32_t, 1024, mode=1rw);
 ```
 

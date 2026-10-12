@@ -323,16 +323,13 @@ public:
 static VCPPModuleAutoRegisterHandler<VCPPModuleTICK_IMPL> _auto_register_TICK_IMPL_handler;
 
 static void appendInstanceParameter(VulTempInstance &inst, const string &raw, const string &macro) {
-    auto attr = parseKeyValueArg(raw);
-    if (!attr) throw VulException("Invalid instance parameter: " + raw);
-    const string key = trim(attr->first);
-    if (key.starts_with("COORD(") && key.back() == ')') {
-        inst.coordinate_bindings.push_back({key.substr(6, key.size() - 7), trim(attr->second)});
+    auto parameter = parseParameterOverrideArg(raw, macro);
+    if (auto dimension = parseCoordinateBindingValue(parameter.second)) {
+        inst.coordinate_bindings.push_back({*dimension, parameter.first});
     } else {
-        auto override = parseParameterOverrideArg(raw, macro);
         for (const auto &existing : inst.parameter_overrides)
-            if (existing.first == override.first) throw VulException("Duplicate parameter override: " + override.first);
-        inst.parameter_overrides.push_back(std::move(override));
+            if (existing.first == parameter.first) throw VulException("Duplicate parameter override: " + parameter.first);
+        inst.parameter_overrides.push_back(std::move(parameter));
     }
 }
 

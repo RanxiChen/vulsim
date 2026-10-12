@@ -252,10 +252,10 @@ INTERFACE() {
 }
 
 // 父模块
-CHILD_INSTANCE(PE, mesh, dims=[M, N], COORD(0)=ROW, COORD(1)=COL);
+CHILD_INSTANCE(PE, mesh, dims=[M, N], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(1));
 ```
 
-`COORD(dimension)=parameter` 用于 `CHILD_INSTANCE(..., dims=[...])`。可以不绑定或只绑定部分维度。维度必须在本级数组范围内，目标必须是子模块声明的 `PARAMETER`。同一维度或同一参数不能重复绑定，绑定参数不能在同一实例声明中再通过 `PARAM(parameter)=expression` 赋值。
+`PARAM(parameter)=COORD(dimension)` 用于 `CHILD_INSTANCE(..., dims=[...])`。可以不绑定或只绑定部分维度。维度必须在本级数组范围内，目标必须是子模块声明的 `PARAMETER`。同一维度不能重复绑定，绑定参数不能在同一实例声明中再通过 `PARAM(parameter)=expression` 赋值。
 
 绑定替代该实例的参数默认值，支持所有普通参数用途，包括数据宽度、队列深度、下级数组大小、逻辑和复位值。依赖参数的默认表达式按照参数声明顺序求值。
 

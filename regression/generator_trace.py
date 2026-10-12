@@ -85,7 +85,7 @@ def generated_case(directory, name, matcher):
     for width in WIDTHS:
         top += f"REGISTER(value{width}, Int<{width}>) {{\n"
         top += assignments(f"value{width}", width, RESET_LOW) + "}\n"
-    top += "CHILD_INSTANCE(Node, lanes, dims=[2], COORD(0)=ROLE);\n"
+    top += "CHILD_INSTANCE(Node, lanes, dims=[2], PARAM(ROLE)=COORD(0));\n"
     top += "USE_CHILD_SERVICE(lanes[*], write, write_lane);\n"
     top += "SERVICE(write, ARG(uint32_t) mode) {\n"
     for width in WIDTHS:

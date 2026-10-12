@@ -115,11 +115,20 @@ MacroEntry normalizeDeclaration(const MacroEntry &entry, const string &location)
             named = true;
             key = attr->first;
             value = attr->second;
-            if (spec.instance && (key.starts_with("PARAM(") || key.starts_with("COORD(")) && key.back() == ')') {
-                if (value.empty() || trim(key.substr(6, key.size() - 7)).empty())
-                    fail("has an empty parameter override or coordinate binding");
-                if (!instance_keys.insert(key).second) fail("attribute '" + key + "' is specified more than once");
-                tail.push_back(key + "=" + value);
+            if (spec.instance && key.starts_with("COORD("))
+                fail("COORD(dim)=name has been removed; use PARAM(name)=COORD(dim)");
+            if (spec.instance && key.starts_with("PARAM(") && key.back() == ')') {
+                pair<string, string> parameter;
+                try {
+                    parameter = parseParameterOverrideArg(arg, entry.name);
+                    parseCoordinateBindingValue(parameter.second);
+                } catch (const VulException &e) { fail(e.getError().msg); }
+                key = "PARAM(" + parameter.first + ")";
+                // A parameter has one slot whether its value is a constant or
+                // an instance coordinate. Whitespace cannot bypass uniqueness.
+                if (!instance_keys.insert(parameter.first).second)
+                    fail("attribute '" + key + "' is specified more than once");
+                tail.push_back(key + "=" + parameter.second);
                 continue;
             }
             if (std::find(spec.keys.begin(), spec.keys.end(), key) == spec.keys.end()) {

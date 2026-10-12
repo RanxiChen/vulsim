@@ -124,6 +124,7 @@ CHILD_INSTANCE(Module, inst, optional_param_overrides...);
 CHILD_INSTANCE(Module, arr, dims=[N0], optional_param_overrides...);
 CHILD_INSTANCE(Module, mesh, dims=[N0, N1], optional_param_overrides...);
 ```
+- optional_param_overrides 是 `PARAM(name)=常量表达式` 或 `PARAM(name)=COORD(dim)`，用于覆盖子模块默认参数，COORD 用于在阵列化子实例中将参数绑定为阵列坐标。
 
 - 连接：
 

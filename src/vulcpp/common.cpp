@@ -164,6 +164,27 @@ pair<string, string> parseParameterOverrideArg(
     }
     return {std::move(param_name), std::move(param_value)};
 }
+
+std::optional<string> parseCoordinateBindingValue(const string &raw_value) {
+    const string value = trim(raw_value);
+    if (!value.starts_with("COORD")) return std::nullopt;
+    const size_t open = value.find_first_not_of(" \t\r\n", 5);
+    if (open == string::npos || value[open] != '(') return std::nullopt;
+    int depth = 0;
+    size_t close = string::npos;
+    for (size_t i = open; i < value.size(); ++i) {
+        if (value[i] == '(') ++depth;
+        else if (value[i] == ')' && --depth == 0) { close = i; break; }
+    }
+    if (close != value.size() - 1)
+        throw VulException("coordinate binding expects PARAM(name)=COORD(dim), without trailing expressions");
+    const string dimension = trim(value.substr(open + 1, close - open - 1));
+    if (dimension.empty()) throw VulException("COORD dimension cannot be empty");
+    if (splitTopLevelCsv(dimension).size() != 1)
+        throw VulException("COORD requires exactly one dimension expression");
+    return dimension;
+}
+
 void setUniqueStringAttr(
     std::optional<string> &target,
     const string &macro_name,

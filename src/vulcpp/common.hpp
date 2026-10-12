@@ -28,6 +28,7 @@ bool parseBoolAttribute(const string &key, const string &value);
 void ensureAttrValue(const string &macro_name, const string &key, const string &value);
 bool isAttrKey(const std::optional<pair<string, string>> &attr, const string &key);
 pair<string, string> parseParameterOverrideArg(const string &raw_arg, const string &macro_name);
+std::optional<string> parseCoordinateBindingValue(const string &raw_value);
 
 struct ReqServParseOptions {
     bool allow_handshake = false;

@@ -86,36 +86,42 @@ case("five-names", {
 
 base = {"PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); PARAMETER(COL, 5); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW*10+COL; }"}
 for name, decl, error in [
-    ("scalar-binding", "COORD(0)=ROW", "COORD dimension out of range"),
-    ("out-of-range", "dims=[2], COORD(1)=ROW", "COORD dimension out of range"),
-    ("duplicate-axis", "dims=[2], COORD(0)=ROW, COORD(0)=COL", "specified more than once"),
-    ("duplicate-param", "dims=[2,2], COORD(0)=ROW, COORD(1)=ROW", "Duplicate COORD binding"),
-    ("unknown-param", "dims=[2], COORD(0)=MISSING", "Unknown child PARAMETER"),
-    ("override-after", "dims=[2], COORD(0)=ROW, PARAM(ROW)=7", "cannot be overridden"),
-    ("override-before", "dims=[2], PARAM(ROW)=7, COORD(0)=ROW", "cannot be overridden"),
+    ("scalar-binding", "PARAM(ROW)=COORD(0)", "COORD dimension out of range"),
+    ("out-of-range", "dims=[2], PARAM(ROW)=COORD(1)", "COORD dimension out of range"),
+    ("duplicate-axis", "dims=[2], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(0)", "Duplicate COORD binding"),
+    ("duplicate-param", "dims=[2,2], PARAM(ROW)=COORD(0), PARAM(ROW)=COORD(1)", "specified more than once"),
+    ("unknown-param", "dims=[2], PARAM(MISSING)=COORD(0)", "Unknown child PARAMETER"),
+    ("override-after", "dims=[2], PARAM(ROW)=COORD(0), PARAM(ROW)=7", "specified more than once"),
+    ("override-before", "dims=[2], PARAM(ROW)=7, PARAM(ROW)=COORD(0)", "specified more than once"),
 ]:
     case(name, dict(base, **{"Top.hpp": f"CHILD_INSTANCE(PE, a, {decl}); QUERY(result, uint32_t) {{ return 0; }}"}), expected_error=error)
 
+case("dimension-expression-binding", dict(base, **{"Top.hpp": """
+CHILD_INSTANCE(PE, a, dims=[2], PARAM( ROW )=COORD(clog2(2)-1));
+USE_CHILD_QUERY(a[1], result, child_result, uint32_t);
+QUERY(result, uint32_t) { return child_result(); }
+"""}), body="if (result() != 15) std::exit(1); sim_nextcycle();", rtl=True)
+
 case("partial-binding", dict(base, **{"Top.hpp": '''
-CHILD_INSTANCE(PE, a, dims=[2,3], COORD(1)=COL);
+CHILD_INSTANCE(PE, a, dims=[2,3], PARAM(COL)=COORD(1));
 USE_CHILD_QUERY(a[1][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 32) std::exit(1); sim_nextcycle(); if (result() != 32) std::exit(2);")
 
 case("explicit-shape-binding", dict(base, **{"Top.hpp": '''
-CHILD_INSTANCE(PE, a, dims=[1, 3], COORD(1)=COL);
+CHILD_INSTANCE(PE, a, dims=[1, 3], PARAM(COL)=COORD(1));
 USE_CHILD_QUERY(a[0][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 32) std::exit(1); sim_nextcycle();")
 
 case("full-non-square-binding", dict(base, **{"Top.hpp": '''
-CHILD_INSTANCE(PE, a, dims=[2,3], COORD(0)=ROW, COORD(1)=COL);
+CHILD_INSTANCE(PE, a, dims=[2,3], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(1));
 USE_CHILD_QUERY(a[1][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 12) std::exit(1); sim_nextcycle(); if (result() != 12) std::exit(2);", rtl=True)
 
 case("nested-structure", {
-    "Top.hpp": '''CHILD_INSTANCE(PE, a, dims=[2], COORD(0)=ROW);
+    "Top.hpp": '''CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0));
 USE_CHILD_QUERY(a[1], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }''',
     "PE.hpp": '''INTERFACE() { PARAMETER(ROW, 9);
@@ -159,7 +165,7 @@ CONNECT_CR_CS(lane[$], send, sink, receive); QUERY(result, uint32_t) { return 0;
 
 case("array-priority", {
     "Top.hpp": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
-CHILD_INSTANCE(Node, lane, dims=[2], COORD(0)=ROLE);
+CHILD_INSTANCE(Node, lane, dims=[2], PARAM(ROLE)=COORD(0));
 CONNECT_CR_S(lane[1], high, high); CONNECT_CR_S(lane[0], low, low);
 SERVICE(high, priority=20) { value = 7; }
 SERVICE(low, priority=-20) { saved.setnext(value); }
@@ -171,7 +177,7 @@ TICK_IMPL() { if constexpr (ROLE == 1) high(); else low(); }''',
 # Each declared request still needs a connection, even when its call is statically inactive.
 case("array-priority-connected", {
     "Top.hpp": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
-CHILD_INSTANCE(Node, lane, dims=[2], COORD(0)=ROLE);
+CHILD_INSTANCE(Node, lane, dims=[2], PARAM(ROLE)=COORD(0));
 CONNECT_CR_S(lane[*], high, high); CONNECT_CR_S(lane[*], low, low);
 SERVICE(high, dims=[2], priority=20) { value = 7; }
 SERVICE(low, dims=[2], priority=-20) { saved.setnext(value); }
@@ -182,7 +188,7 @@ TICK_IMPL() { if constexpr (ROLE == 1) high(); else low(); }''',
 }, body="sim_nextcycle(); if (result() != 17) std::exit(1);", rtl=True)
 
 case("no-user-parameter-leak", {
-    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
+    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
     "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu); USE_CHILD_QUERY(fpu, result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
     "FPU.hpp": "INTERFACE() { PARAMETER(ROW, 99); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW; }",
 }, body="if (result() != 99) std::exit(1); sim_nextcycle();", rtl=True)
@@ -193,7 +199,7 @@ case("internal-coordinate-reference", {
 }, expected_error="not a user API")
 
 case("coordinate-dependent-query-width", {
-    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
+    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
     "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+1); USE_CHILD_QUERY(fpu, result, child, Int<ROW+1>); QUERY(result, uint32_t) { return child().to<uint32_t>(); }",
     "FPU.hpp": "INTERFACE() { PARAMETER(WIDTH, 9); \n    QUERY(result, Int<WIDTH>);\n} REGISTER(value, Int<WIDTH>) { value = 1; } QUERY(result, Int<WIDTH>) { return value.get(); }",
 }, body="if (result() != 1) std::exit(1); sim_nextcycle(); if (result() != 1) std::exit(2);", rtl=True)
@@ -204,7 +210,7 @@ case("comparison-in-call-index", {
 }, body="sim_nextcycle(); if (result() != 9) std::exit(1);", rtl=True)
 
 case("concrete-name-collision", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[1], COORD(0)=ROW); CHILD_INSTANCE(PE, arr__0, PARAM(ROW)=7); USE_CHILD_QUERY(arr[0], result, first, uint32_t); USE_CHILD_QUERY(arr__0, result, second, uint32_t); QUERY(result, uint32_t) { return first()+second()*100; }",
+    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[1], PARAM(ROW)=COORD(0)); CHILD_INSTANCE(PE, arr__0, PARAM(ROW)=7); USE_CHILD_QUERY(arr[0], result, first, uint32_t); USE_CHILD_QUERY(arr__0, result, second, uint32_t); QUERY(result, uint32_t) { return first()+second()*100; }",
     "PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); \n    QUERY(result, uint32_t);\n} REGISTER(value, uint32_t) { value = ROW+1; } QUERY(result, uint32_t) { return value.get(); }",
 }, body="if (result() != 801) std::exit(1); sim_nextcycle(); if (result() != 801) std::exit(2);", rtl=True)
 
@@ -213,11 +219,11 @@ case("ignore-constexpr-in-literal", {
 })
 
 case("query-alias-later-coordinate-mismatch", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(arr[*], result, child, Int<1>); QUERY(result, uint32_t) { return child()[0].to<uint32_t>(); }",
+    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(arr[*], result, child, Int<1>); QUERY(result, uint32_t) { return child()[0].to<uint32_t>(); }",
     "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, Int<ROW+1>);\n} QUERY(result, Int<ROW+1>) { return 0; }",
 }, expected_error="USE_CHILD_QUERY return type mismatch")
 
 case("service-alias-later-coordinate-mismatch", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], COORD(0)=ROW); USE_CHILD_SERVICE(arr[*], load, child); QUERY(result, uint32_t) { return 0; }",
+    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_SERVICE(arr[*], load, child); QUERY(result, uint32_t) { return 0; }",
     "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); SERVICE(load, ARG(Int<ROW+1>) value); } SERVICE(load, ARG(Int<ROW+1>) value) { }",
 }, expected_error="USE_CHILD_SERVICE signature mismatch")

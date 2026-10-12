@@ -286,7 +286,7 @@
 | `instantiate.cpp` | `instantiateModule`；求值参数、配置和局部类型，按原顺序编排各静态化阶段。 |
 | `transactions.cpp` | `staticalizeReqServ`、`staticalizeTransactions`、`staticalizeTicks`；匹配 Service／QUERY 声明与实现，要求 QUERY 返回类型匹配且具有唯一实现；保留逻辑块编号与 priority。 |
 | `resources.cpp` | `staticalizeResources`；静态化 Register、Wire、Queue、BRAM、ROM。 |
-| `children.cpp` | `staticalizeChildren`；子实例维度、参数覆盖与 COORD 绑定。 |
+| `children.cpp` | `staticalizeChildren`；子实例维度与统一 PARAM 赋值，`PARAM(name)=COORD(dim)` 降低为坐标绑定。 |
 | `connections.cpp` | `staticalizeConnections`；连接索引解析、通配边界连接与子接口引出；QUERY 支持多通配，记录返回值外层形状与逐实例槽位。 |
 | `call_analysis.cpp` | `detectRequestCallInLogicBlocks`；`joinCode`、`transactionCallIndices`、`activeConstexprCode` 供调度阶段提取静态有效调用并保留诊断偏移。 |
 | `scheduling.cpp` | `setupUpdateSequence`；建立具体事务端点调用图，诊断调用环、重复调用、多更新源及更新约束环，将 priority 投影到公共祖先。 |
@@ -494,8 +494,10 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 
 **文件功能**：读取 VULC++ 工程、递归实例化模块，并建立仿真 harness 与顶层的连接。
 
-- `parseVcppStaticProjectImpl(...)`：解析工程并逐坐标展开具体实例，落实 COORD 绑定和普通参数覆盖，保留声明路径用于共享模板文件；构建用于更新顺序分析的 TestMain；子 Request 驱动的顶层内部 Service 不添加虚构的外部调用源。
+- `parseVcppStaticProjectImpl(...)`：解析工程并逐坐标展开具体实例，落实 `PARAM(name)=COORD(dim)` 坐标绑定和普通参数覆盖，保留声明路径用于共享模板文件；构建用于更新顺序分析的 TestMain；子 Request 驱动的顶层内部 Service 不添加虚构的外部调用源。
 
 ## QUERY 声明与快照回归
 
 `regression/generator_query_api.py` 覆盖 INTERFACE 必需声明、返回类型匹配与缺失／重复实现；验证 simgen 与 RTL/API inline 中多维、部分通配、数组返回嵌套、结构体、枚举、宽 Int、复位与快照值副本。QUERY 本身始终是普通无参函数，阵列只属于通配引出返回值。
+
+坐标绑定语法统一为 `PARAM(name)=COORD(dim)`；`declaration_args` 按参数名去重，使普通赋值与坐标绑定互斥，`common` 识别右侧 COORD 标记，`module_handlers` 将其降低为已有坐标绑定模型。
