@@ -1,5 +1,7 @@
 # src 代码索引
 
+核心流程：`vulcpp/` 解析工程 → `module/` 静态化与调度 → `simgen/` 或 `rtlgen/` 生成代码。`cppparse/` 提供源码扫描；`instance_graph` 与 `port_shape` 由分析、验证和生成器共享。根目录头文件保留公共接口，子目录中的 `detail.hpp` 仅供内部实现使用。
+
 ## src/apiinline/apiinline.cpp
 
 **文件功能**：串联各类 API inline pass，将模块逻辑代码中的 VUL API 调用替换为端口读写代码。
@@ -206,18 +208,15 @@
 - `calculateConstexprValue(...)`：声明配置表达式求值入口。
 - `mergeStaticConfigLibs(...)`：声明配置库合并入口。
 
-## src/cppparse.cpp
+## src/cppparse/
 
-**文件功能**：提供轻量级 C++/宏源码扫描、注释剥离和代码块解析能力。
+**文件功能**：按源码处理、基础扫描和宏条目扫描拆分，公共声明保留在 `src/cppparse.hpp`。
 
-**主要函数**
-- `readFileLines(...)`：读取文件为代码行。
-- `stripComments(...)`：移除 C/C++ 注释并保留行结构。
-- `findNext(...)`：查找下一个指定字符位置。
-- `findNextBraceBlock(...)`：查找括号包围的代码块。
-- `matchMacros(...)`：按宏模式匹配宏调用。
-- `codeblockContainsFunctionCall(...)`：检测代码块中是否调用指定函数。
-- `findAllMacroEntries(...)`：扫描所有顶层宏条目及其参数和代码块。
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `source.cpp` | `readFileLines`、`stripComments`；保留注释处理与续行的原始行号映射。 |
+| `scanning.cpp` | `findNext`、`findNextBraceBlock`、`matchMacros`、`codeblockContainsFunctionCall`；轻量扫描。 |
+| `macro_entries.cpp` | `findAllMacroEntries`、`findAllMacroEntriesPreservingLinePositions`；处理嵌套参数、字面量、数字分隔符及宏体位置，词法辅助留在匿名命名空间。 |
 
 ## src/cppparse.hpp
 
@@ -278,15 +277,22 @@
 - `portCallSlots(...)`：静态校验调用坐标或展开全部调用端点。
 - `lowerPortIndexDims(...)`：将 Service 的 `IDX_DIM` 降低为一致的坐标常量表达式。
 
-## src/module.cpp
+## src/module/
 
-**文件功能**：将临时模块实例化为静态模块层次，并分析连接和更新顺序。
+**文件功能**：将临时模块静态化，分析事务调用并计算具体实例的更新顺序。公共数据模型与入口保留在 `src/module.h`。
 
-**主要函数**
-- `staticalizeReqServ(...)`：静态化 request/service 定义。
-- `instantiateModule(...)`：静态化模块参数、状态和子实例声明；Service 可由逻辑实现或通过 `CONNECT_S_CS` 转发。
-- `detectRequestCallInLogicBlocks(...)`：扫描逻辑块中的 request/service 调用。
-- `setupUpdateSequence(...)`：按具体实例与事务索引建图，静态求值多维调用索引及 `if constexpr`，将批量调用展开到所有端点，区分真实调用环、重复调用和多更新源；将 priority 约束投影到公共祖先，保存具体子实例更新序列。
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `instantiate.cpp` | `instantiateModule`；求值参数、配置和局部类型，按原顺序编排各静态化阶段。 |
+| `transactions.cpp` | `staticalizeReqServ`、`staticalizeTransactions`、`staticalizeTicks`；匹配 Service 声明／实现，保留逻辑块编号与 priority。 |
+| `resources.cpp` | `staticalizeResources`；静态化 Register、Wire、Queue、BRAM、ROM。 |
+| `children.cpp` | `staticalizeChildren`；子实例维度、参数覆盖与 COORD 绑定。 |
+| `connections.cpp` | `staticalizeConnections`；连接索引解析、通配边界连接与子接口引出。 |
+| `call_analysis.cpp` | `detectRequestCallInLogicBlocks`；`joinCode`、`transactionCallIndices`、`activeConstexprCode` 供调度阶段提取静态有效调用并保留诊断偏移。 |
+| `scheduling.cpp` | `setupUpdateSequence`；建立具体事务端点调用图，诊断调用环、重复调用、多更新源及更新约束环，将 priority 投影到公共祖先。 |
+| `detail.hpp` | `vulmodule::detail::InstantiationContext` 与内部阶段声明；共享目标实例、临时模块、配置／类型库和逻辑块编号。 |
+
+具体连接仍由 `materializeConcreteConnections` 展开；事务调用维度规则复用 `port_shape`。
 
 ## src/module.h
 
@@ -308,23 +314,24 @@
 **主要类型**
 - `VulStaticProject`：保存顶层模块、全局配置、全局 bundle、全局 helper 和测试模块。
 
-## src/rtlgen.cpp
+## src/rtlgen/
 
-**文件功能**：生成 RTL skeleton、logic wrapper 和 Verilator 测试桥接代码；logic 经过 APIInline 后，以带 `#pragma input_port/output_port` 的文件级全局端口 ABI 交给 RTLZZ。
+**文件功能**：生成 RTL skeleton、经 API inline 的 HLS logic 和 Verilator 测试桥接。公共入口保留在 `src/rtlgen.h`。
 
-**主要函数**
-- `genModuleRTL(...)`：生成 RTL skeleton，对 logic 调用 APIInline，并输出供 RTLZZ 编译的逻辑代码。
-- `globalizeHLSArgument(...)`：将内部积累的旧式主函数参数声明转换为新 ABI 的全局端口声明和方向 pragma。
-- `_procConstAndBundle(...)`：生成常量、类型和 helper 头部。
-- `_procWires(...)`：生成 wire 相关 HLS 初始化和 RTL 声明。
-- `_procRegisters(...)`：生成寄存器端口、代理/helper 和 RTL 实例；复位值临时对象先 `{}` 零初始化，再执行用户复位块并打包。
-- `_procRequests(...)`：生成 request 端口和调用包装。
-- `_procServicesAndTicks(...)`：生成 service/tick 逻辑入口和返回端口，按 priority 从大到小执行；子 Request 驱动的本地 Service 使用内部线网。
-- `_procQueries(...)`：生成 query 端口和打包逻辑。
-- `_procChildrenAndConnection(...)`：生成子模块连接、服务转发和查询转发；`CONNECT_CR_S` 直接接入本地 Service 的握手及参数线网。
-- `_procQueues(...)`：生成 Queue/QueueMP 端口、helper 和 RTL 实例。
-- `_procBRAMAndROM(...)`：生成 BRAM/ROM 端口、helper 和 RTL 实例。
-- `genVerilatorTestMainCpp(...)`：生成 Verilator 顶层测试绑定代码，支持数组 Request/Service 的模板索引及与 C++ 仿真一致的 `sim_reset()` 测试入口，Main 的 QUERY 仅求值读取、不触发 Service 回调；宽 Verilator 端口按 32 位存储字转换为 64 位访问。
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `module.cpp` | `genModuleRTL`；建立具体生成视图、编排处理阶段、组装输出和调试映射。 |
+| `declarations.cpp` | `_procConstAndBundle`、`_procWires`；常量、类型、helper 和 wire。 |
+| `registers.cpp` | `_procRegisters`；寄存器端口、RTL 实例、零初始化及用户复位块。 |
+| `transactions.cpp` | `_procRequests`、`_procServicesAndTicks`、`_procQueries`；事务端口、逻辑入口及 priority。 |
+| `connections.cpp` | `_procChildrenAndConnection`；子模块线网、Service／Query 引出与转发。 |
+| `queues.cpp` | `_procQueues`；Queue／QueueMP 端口及 RTL 实例。 |
+| `memories.cpp` | `_procBRAMAndROM`；存储器端口、实例及 ROM 资源文件。 |
+| `verilator.cpp` | `genVerilatorTestMainCpp`；测试绑定、数组事务与复位，宽端口按 Verilator 存储布局转换。 |
+| `common.hpp` / `common.cpp` | `ArgPort`、端口命名、字段表达式和参数展平；仅声明跨文件辅助接口。 |
+| `detail.hpp` | `rtlgen::detail::RTLGenContext`、内部处理阶段；集中持有代码缓冲区和调试映射。 |
+
+**顺序约束**：先收集事务／连接／资源逻辑并检查 Register API 使用情况，再处理寄存器；API inline 完成后插入寄存器复位计算。文件级全局端口与方向 pragma 的 ABI 保持一致。RTLZZ 接入仍由根目录的 `rtlgen_rtlzz.cpp` 和 `rtlzz_bridge.cpp` 实现。
 
 ## src/rtlgen.h
 
@@ -359,20 +366,23 @@
 **主要函数**
 - `generateLogicRTLWithRTLzz(...)`：声明 logic C++ 到 RTL 文本的转换入口。
 
-## src/simgen.cpp
+## src/simgen/
 
-**文件功能**：生成 C++ 仿真模型、测试 harness、主程序和 trace/breakpoint 集成代码。
+**文件功能**：生成 C++ 仿真模块、工程头文件和测试 harness。公共入口与结果结构保留在 `src/simgen.h`。
 
-**主要函数**
-- `genCurrentTimeString()`：生成当前时间字符串。
-- `genStaticConfigHeaderCode(...)`：生成静态配置头文件代码。
-- `genStaticBundle(...)`：生成单个静态 bundle 的 C++ 定义。
-- `genStaticBundleHeaderCode(...)`：生成 bundle 头文件代码。
-- `genStaticProjectHeaderCode(...)`：生成工程公共头文件代码。
-- `genStaticModuleCodeHpp(...)`：生成具体实例的声明和实现，数组上下文使用按声明路径命名的坐标模板特化，父类型直接确定；包含边界 Service 转发函数；寄存器复位值先递归零初始化，再执行可选用户复位赋值。
-- `genStaticTestHarnessCodeHpp(...)`：生成测试 harness 声明和实现代码。
-- `genStaticTestHarnessHpp(...)`：生成测试 harness 聚合头文件。
-- `genStaticTestMainHpp(...)`：生成仿真 main 入口代码。
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `common.cpp` | `genCurrentTimeString`、内部 `genHeaderPrelude` 与共享子实例命名辅助。 |
+| `headers.cpp` | `genStaticConfigHeaderCode`、`genStaticBundle`、`genStaticBundleHeaderCode`、`genStaticGlobalHelperHeaderCode`、`genStaticProjectHeaderCode`。 |
+| `module.cpp` | `genStaticModuleCodeHpp`；局部声明、Tick／helper、功能阶段编排及最终声明／实现组装。 |
+| `transactions.cpp` | `emitTransactions`；Request、Service、Query 包装及边界 Service 转发。 |
+| `resources.cpp` | `emitResources`；状态组件、复位值零初始化、用户复位、周期提交与资源清单。 |
+| `hierarchy.cpp` | `emitHierarchy`；具体子实例类型、坐标模板、请求连接与子接口引出。 |
+| `tracing.cpp` | `emitTracing`；trace 注册、阵列坐标过滤和周期采样。 |
+| `harness.cpp` | `genStaticTestHarnessCodeHpp`、`genStaticTestHarnessHpp`、`genStaticTestMainHpp`；测试绑定、trace／断点集成及 main。 |
+| `detail.hpp` | `simgen::detail::ModuleGenContext`；持有完整具体生成视图、类名及各代码段／调试映射，生命周期覆盖所有阶段。 |
+
+RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成框架。
 
 ## src/simgen.h
 
@@ -452,16 +462,10 @@
 
 ## src/vcpp.cpp
 
-**文件功能**：解析 VUL C++ 宏工程，构建临时模块、测试模块和静态工程。
+**文件功能**：保留工程解析公共入口。
 
-**主要函数/类型**
-- `parseVcppStaticProject(...)`：解析工程并返回静态工程对象。
-- `_parseTempModule(...)`：解析单个模块头文件为临时模块。
-- `_parseTestModule(...)`：解析测试 main 文件为测试模块。
-- `parseProjectHeaders(...)`：扫描并解析工程 header 文件。
-- `importGlobalHeaderModule(...)`：导入全局 header 中的配置、类型和 helper。
-- `VCPPModuleHandler`：模块宏处理器基类。
-- `VCPPTestHandler`：测试宏处理器基类。
+- `parseVcppStaticProject(...)`：转调 `vulcpp/project_parser.cpp` 中的 `parseVcppStaticProjectImpl(...)`。
+- 模块／测试宏处理器分别位于 `vulcpp/module_handlers.*` 和 `vulcpp/test_handlers.*`。
 
 ## src/vcpp.hpp
 
@@ -477,16 +481,8 @@
 **主要函数/类型**
 - `getVulLibFiles()`：返回 runtime 头文件和资源文件列表。
 
-## example/register_zero_init/ 与 tests/register_zero_init_test.py
-
-**文件功能**：共用 Main 断言验证无块、空块、部分字段/元素/位段、枚举零值、宽整数和兼容寄存器声明。Python 驱动分别运行生成的 C++ 仿真及 native/CIRCT RTL，并检查再次复位和 resetnext 后的候选状态。
-
 ## src/vulcpp/project_parser.cpp
 
 **文件功能**：读取 VULC++ 工程、递归实例化模块，并建立仿真 harness 与顶层的连接。
 
 - `parseVcppStaticProjectImpl(...)`：解析工程并逐坐标展开具体实例，落实 COORD 绑定和普通参数覆盖，保留声明路径用于共享模板文件；构建用于更新顺序分析的 TestMain；子 Request 驱动的顶层内部 Service 不添加虚构的外部调用源。
-
-## regression/generator_array_instances.py / regression/array_instances
-
-**文件功能**：验证五组声明路径与 25 个具体实例、COORD 合法性、嵌套结构变化、用户参数隔离、调用诊断与 priority，严格检查原始 systolic2d 双路径输出、RTL 实现去重及具体 Trace 路径；硬件回归使用批量 REQUEST 提交，逐周期验证参数化截断、队列容量、事务连接和复位，并同时运行 C++/RTL。

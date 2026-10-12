@@ -108,7 +108,7 @@ if (LIBCLANG_INCLUDE_DIR)
     include_directories(${LIBCLANG_INCLUDE_DIR})
 endif()
 
-file (GLOB_RECURSE LIB_CXX_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file (GLOB_RECURSE LIB_CXX_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 list(REMOVE_ITEM LIB_CXX_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtlzz_bridge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtlgen_rtlzz.cpp"

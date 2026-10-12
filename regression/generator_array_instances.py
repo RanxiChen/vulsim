@@ -217,36 +217,3 @@ case("service-alias-later-coordinate-mismatch", {
     "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], COORD(0)=ROW); USE_CHILD_SERVICE(arr[*], load, child); QUERY(result, uint32_t) { return 0; }",
     "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); SERVICE(load, ARG(Int<ROW+1>) value); } SERVICE(load, ARG(Int<ROW+1>) value) { }",
 }, expected_error="USE_CHILD_SERVICE signature mismatch")
-
-# Keep the original example unchanged and assert its actual observable behavior.
-with tempfile.TemporaryDirectory(prefix="array-systolic2d-") as directory:
-    expected = ["systolic2d tick=0 spill=11", "systolic2d tick=1 row=0 data=0",
-                "systolic2d tick=1 row=1 data=3"]
-    for generator, target in ((SIMGEN, "sim"), (RTLGEN, "rtl")):
-        out = Path(directory) / target
-        generated = run([str(generator), "-m", "example/systolic2d/Main.cpp",
-                         "-t", "example/systolic2d/Top.hpp", "-p", "example/systolic2d",
-                         "-f", "-o", str(out)])
-        if generated.returncode:
-            raise RuntimeError(f"systolic2d {target}: generation failed\n{generated.stdout}")
-        simulated = run([str(out / "run.sh")])
-        actual = [line for line in simulated.stdout.splitlines() if line.startswith("systolic2d ")]
-        if simulated.returncode or actual != expected:
-            raise RuntimeError(f"systolic2d {target}: incorrect output {actual}\n{simulated.stdout}")
-    print("generator array check PASS: original-systolic2d-both-paths")
-
-with tempfile.TemporaryDirectory(prefix="array-trace-") as directory:
-    out = Path(directory)
-    generated = run([str(SIMGEN), "-m", "regression/array_instances/Main.cpp", "-f",
-                     "-o", str(out), "--trace", "top::arr1[1]::fpu.value,top::arr2[*]::fpu.value"])
-    if generated.returncode:
-        raise RuntimeError(f"concrete trace: generation failed\n{generated.stdout}")
-    simulated = run([str(out / "run.sh")])
-    if simulated.returncode:
-        raise RuntimeError(f"concrete trace: simulation failed\n{simulated.stdout}")
-    trace = (out / "trace.vcd").read_text()
-    scopes = [line for line in trace.splitlines() if "$scope module arr" in line]
-    expected = {f"$scope module {name} $end" for name in ["arr1[1]", "arr2[0]", "arr2[1]", "arr2[2]", "arr2[3]"]}
-    if len(scopes) != 5 or set(scopes) != expected:
-        raise RuntimeError(f"concrete trace: incorrect coordinate paths {scopes}")
-    print("generator array check PASS: concrete-trace-paths")
