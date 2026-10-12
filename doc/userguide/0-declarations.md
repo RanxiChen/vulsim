@@ -24,7 +24,7 @@ REGISTER(name=counter, ports=2, type=uint32_t);
 | `QUERY` | `name, type` |
 | `CHILD_INSTANCE` | `module, name, dims=[]`，末尾参数覆盖和坐标绑定 |
 | `USE_CHILD_SERVICE` | `instance, service, alias, dims`，末尾业务参数序列；dims 可省略以推断通配形状 |
-| `USE_CHILD_QUERY` | `instance, query, alias, type, dims`；dims 可省略以推断通配形状 |
+| `USE_CHILD_QUERY` | `instance, query, alias, type, dims`；dims 可省略以推断返回值的通配形状 |
 | `BRAM` | `name, type, size, read_ports=1, write_ports=1, mode=generic` |
 | `ROM` | `name, data_width, size, read_ports=1, init` |
 | `QUEUE` | `name, type, depth, enq_width=1, deq_width=1` |
@@ -54,7 +54,9 @@ CHILD_INSTANCE(Node, lane, dims=[4], PARAM(WIDTH)=32, COORD(0)=ROW);
 BRAM(memory, uint32_t, 1024, mode=1rw);
 ```
 
-运行期资源方法、事务调用坐标、连接端点索引和通配规则保持原有语义，详见对应章节。
+QUERY 不接受阵列属性，也没有模板坐标调用。带 INTERFACE 的模块必须在接口块内声明 QUERY，再由所选实现提供同名、同返回类型的实现。USE_CHILD_QUERY 的通配维度只叠加到返回类型上，例如 T 在 [2,3] 形状下返回 `std::array<std::array<T,3>,2>`，调用为普通 `alias()`；已有数组返回类型保留在更内层。详见模块和阵列化章节。
+
+运行期资源方法、事务调用坐标与连接端点索引规则保持原有语义。
 
 ## 迁移规则
 

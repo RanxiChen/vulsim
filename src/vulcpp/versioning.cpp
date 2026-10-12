@@ -50,9 +50,9 @@ InterfaceEntries parseInterfaceEntries(
     InterfaceEntries out;
     vector<MacroEntry> interface_entries = parseNestedMacroEntriesPreservingPositions(interface_entry, context);
     for (const auto &entry : interface_entries) {
-        if (entry.name != "PARAMETER" && entry.name != "REQUEST" && entry.name != "SERVICE") {
+        if (entry.name != "PARAMETER" && entry.name != "REQUEST" && entry.name != "SERVICE" && entry.name != "QUERY") {
             throw VulException(
-                "INTERFACE may only contain PARAMETER, REQUEST, and SERVICE declarations; got '" +
+                "INTERFACE may only contain PARAMETER, REQUEST, SERVICE, and QUERY declarations; got '" +
                 entry.name + "' at " + context.getOriginalPosition(entry.pos)
             );
         }
@@ -62,6 +62,7 @@ InterfaceEntries parseInterfaceEntries(
                 context.getOriginalPosition(entry.pos)
             );
         }
+        if (entry.name == "QUERY") out.query_names.insert(entry.args[0]);
         if (entry.name == "SERVICE") {
             if (entry.args.empty()) {
                 throw VulException("SERVICE requires at least 1 argument at " + context.getOriginalPosition(entry.pos));
@@ -80,6 +81,7 @@ InterfaceEntries parseInterfaceEntries(
 void validateInterfaceImplementationEntries(
     const vector<MacroEntry> &entries,
     const unordered_set<string> &interface_services,
+    const unordered_set<string> &interface_queries,
     const VCPPModuleContext &context,
     const string &scope_name
 ) {
@@ -96,6 +98,13 @@ void validateInterfaceImplementationEntries(
                 "'; declare module interface ports and parameters in INTERFACE at " +
                 context.getOriginalPosition(entry.pos)
             );
+        }
+        if (entry.name == "QUERY") {
+            if (!entry.has_body)
+                throw VulException("QUERY in " + scope_name + " must provide an implementation block at " + context.getOriginalPosition(entry.pos));
+            if (!interface_queries.contains(entry.args[0]))
+                throw VulException("QUERY implementation '" + entry.args[0] + "' in " + scope_name +
+                                   " has no declaration in INTERFACE at " + context.getOriginalPosition(entry.pos));
         }
         if (entry.name == "SERVICE") {
             if (!entry.has_body) {
@@ -178,7 +187,7 @@ vector<MacroEntry> selectVersionedModuleEntries(
             }
             default_entries.push_back(top_entries[i]);
         }
-        validateInterfaceImplementationEntries(default_entries, interface_data.service_names, context, "default implementation");
+        validateInterfaceImplementationEntries(default_entries, interface_data.service_names, interface_data.query_names, context, "default implementation");
         vector<MacroEntry> selected_entries;
         selected_entries.reserve(interface_data.entries.size() + default_entries.size());
         selected_entries.insert(selected_entries.end(), interface_data.entries.begin(), interface_data.entries.end());
@@ -223,7 +232,7 @@ vector<MacroEntry> selectVersionedModuleEntries(
     }
 
     vector<MacroEntry> version_entries = parseNestedMacroEntriesPreservingPositions(*selected_version_entry, context);
-    validateInterfaceImplementationEntries(version_entries, interface_data.service_names, context, "VERSION block");
+    validateInterfaceImplementationEntries(version_entries, interface_data.service_names, interface_data.query_names, context, "VERSION block");
 
     vector<MacroEntry> selected_entries;
     selected_entries.reserve(interface_data.entries.size() + version_entries.size());

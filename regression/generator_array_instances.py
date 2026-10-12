@@ -84,7 +84,7 @@ case("five-names", {
     "FPU.hpp": "REGISTER(value, uint32_t);",
 }, check=names_check, rtl=True, rtl_check=rtl_names_check)
 
-base = {"PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); PARAMETER(COL, 5); } QUERY(result, uint32_t) { return ROW*10+COL; }"}
+base = {"PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); PARAMETER(COL, 5); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW*10+COL; }"}
 for name, decl, error in [
     ("scalar-binding", "COORD(0)=ROW", "COORD dimension out of range"),
     ("out-of-range", "dims=[2], COORD(1)=ROW", "COORD dimension out of range"),
@@ -118,11 +118,15 @@ case("nested-structure", {
     "Top.hpp": '''CHILD_INSTANCE(PE, a, dims=[2], COORD(0)=ROW);
 USE_CHILD_QUERY(a[1], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }''',
-    "PE.hpp": '''INTERFACE() { PARAMETER(ROW, 9); }
+    "PE.hpp": '''INTERFACE() { PARAMETER(ROW, 9);
+    QUERY(result, uint32_t);
+}
 CHILD_INSTANCE(FPU, fpu, dims=[ROW+1], PARAM(TAG)=ROW+7);
 USE_CHILD_QUERY(fpu[ROW], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }''',
-    "FPU.hpp": '''INTERFACE() { PARAMETER(TAG, 2); PARAMETER(NEXT, TAG+1); }
+    "FPU.hpp": '''INTERFACE() { PARAMETER(TAG, 2); PARAMETER(NEXT, TAG+1);
+    QUERY(result, uint32_t);
+}
 REGISTER(value, Int<NEXT>) { value = TAG; }
 QUERY(result, uint32_t) { return value.get().to<uint32_t>() + NEXT*100; }''',
 }, body="if (result() != 908) std::exit(1); sim_nextcycle(); if (result() != 908) std::exit(2);", rtl=True)
@@ -179,8 +183,8 @@ TICK_IMPL() { if constexpr (ROLE == 1) high(); else low(); }''',
 
 case("no-user-parameter-leak", {
     "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); } CHILD_INSTANCE(FPU, fpu); USE_CHILD_QUERY(fpu, result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
-    "FPU.hpp": "INTERFACE() { PARAMETER(ROW, 99); } QUERY(result, uint32_t) { return ROW; }",
+    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu); USE_CHILD_QUERY(fpu, result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
+    "FPU.hpp": "INTERFACE() { PARAMETER(ROW, 99); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW; }",
 }, body="if (result() != 99) std::exit(1); sim_nextcycle();", rtl=True)
 
 case("internal-coordinate-reference", {
@@ -190,8 +194,8 @@ case("internal-coordinate-reference", {
 
 case("coordinate-dependent-query-width", {
     "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); } CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+1); USE_CHILD_QUERY(fpu, result, child, Int<ROW+1>); QUERY(result, uint32_t) { return child().to<uint32_t>(); }",
-    "FPU.hpp": "INTERFACE() { PARAMETER(WIDTH, 9); } REGISTER(value, Int<WIDTH>) { value = 1; } QUERY(result, Int<WIDTH>) { return value.get(); }",
+    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+1); USE_CHILD_QUERY(fpu, result, child, Int<ROW+1>); QUERY(result, uint32_t) { return child().to<uint32_t>(); }",
+    "FPU.hpp": "INTERFACE() { PARAMETER(WIDTH, 9); \n    QUERY(result, Int<WIDTH>);\n} REGISTER(value, Int<WIDTH>) { value = 1; } QUERY(result, Int<WIDTH>) { return value.get(); }",
 }, body="if (result() != 1) std::exit(1); sim_nextcycle(); if (result() != 1) std::exit(2);", rtl=True)
 
 case("comparison-in-call-index", {
@@ -201,7 +205,7 @@ case("comparison-in-call-index", {
 
 case("concrete-name-collision", {
     "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[1], COORD(0)=ROW); CHILD_INSTANCE(PE, arr__0, PARAM(ROW)=7); USE_CHILD_QUERY(arr[0], result, first, uint32_t); USE_CHILD_QUERY(arr__0, result, second, uint32_t); QUERY(result, uint32_t) { return first()+second()*100; }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); } REGISTER(value, uint32_t) { value = ROW+1; } QUERY(result, uint32_t) { return value.get(); }",
+    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); \n    QUERY(result, uint32_t);\n} REGISTER(value, uint32_t) { value = ROW+1; } QUERY(result, uint32_t) { return value.get(); }",
 }, body="if (result() != 801) std::exit(1); sim_nextcycle(); if (result() != 801) std::exit(2);", rtl=True)
 
 case("ignore-constexpr-in-literal", {
@@ -209,8 +213,8 @@ case("ignore-constexpr-in-literal", {
 })
 
 case("query-alias-later-coordinate-mismatch", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(arr[*], result, child, Int<1>); QUERY(result, uint32_t) { return child<0>().to<uint32_t>(); }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); } QUERY(result, Int<ROW+1>) { return 0; }",
+    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], COORD(0)=ROW); USE_CHILD_QUERY(arr[*], result, child, Int<1>); QUERY(result, uint32_t) { return child()[0].to<uint32_t>(); }",
+    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, Int<ROW+1>);\n} QUERY(result, Int<ROW+1>) { return 0; }",
 }, expected_error="USE_CHILD_QUERY return type mismatch")
 
 case("service-alias-later-coordinate-mismatch", {

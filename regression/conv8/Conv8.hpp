@@ -6,6 +6,7 @@ INTERFACE() {
     SERVICE(submit, handshake=1, ARG(ConvCommand) command);
     SERVICE(dma_read, handshake=1, ARG(uint32_t) address);
     REQUEST(dma_data, ARG(uint64_t) data);
+    QUERY(status, ConvStatus);
 }
 
 HELPER() {

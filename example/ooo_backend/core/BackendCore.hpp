@@ -12,6 +12,8 @@ INTERFACE() {
     REQUEST(mem_resp0, handshake=1, RESP(MemResponse) resp);
     REQUEST(mem_req1, ARG(MemRequest) req);
     REQUEST(mem_resp1, handshake=1, RESP(MemResponse) resp);
+    QUERY(status, BackendStatus);
+    QUERY(regs, ArchRegSnapshot);
 }
 
 HELPER() {

@@ -10,6 +10,9 @@ INTERFACE() {
     PARAMETER(DIV_LATENCY, 8);
     SERVICE(issue, handshake=1, ARG(FuRequest) req);
     SERVICE(pop_result, handshake=1, RESP(WritebackEvent) wb);
+    QUERY(can_accept, bool);
+    QUERY(has_result, bool);
+    QUERY(status, UnitStatus);
 }
 
 HELPER() {

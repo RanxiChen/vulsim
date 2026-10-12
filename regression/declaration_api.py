@@ -130,6 +130,7 @@ static_assert(std::is_same_v<decltype(send(Word{})), void>);
 static_assert(std::is_same_v<decltype(fetch(0, std::declval<Word&>())), bool>);
 static_assert(std::is_same_v<decltype(plain(std::declval<Word&>())), void>);
 static_assert(std::is_same_v<decltype(ping()), void>);
+static_assert(std::is_same_v<decltype(&child_status), Word(*)()>);
 static_assert(std::is_same_v<decltype(q), VulQueue<Word, N>>);
 static_assert(std::is_same_v<decltype(mp), VulQueueMP<Word, N, 2, 3>>);
 static_assert(std::is_same_v<decltype(single), VulBRAM1RW<Word, N>>);

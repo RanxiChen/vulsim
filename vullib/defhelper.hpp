@@ -101,7 +101,7 @@ inline constexpr int64_t clog2(int64_t value) {
 // completion. Their actual handshake/type compatibility is checked by vul.
 #define CHILD_INSTANCE(module, name) void* name = nullptr;
 #define USE_CHILD_SERVICE(instance, service, alias, ...) template<uint32_t... IDX> bool alias(__VA_ARGS__);
-#define USE_CHILD_QUERY(instance, query, alias, type) template<uint32_t... IDX> type alias();
+#define USE_CHILD_QUERY(instance, query, alias, type) type alias();
 #define CONNECT_CR_CS(srcchild, srcreq, dstchild, dstserv)
 #define CONNECT_CR_S(srcchild, srcreq, dstserv)
 #define CONNECT_CR_R(srcchild, srcreq, dstreq)

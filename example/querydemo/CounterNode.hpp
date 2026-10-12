@@ -6,6 +6,7 @@
 
 INTERFACE() {
     SERVICE(push, ARG(uint32_t) data);
+    QUERY(snapshot, ChildSnapshot);
 }
 
 REGISTER(sum, uint32_t) {

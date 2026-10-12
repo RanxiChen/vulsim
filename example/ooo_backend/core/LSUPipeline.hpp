@@ -11,6 +11,9 @@ INTERFACE() {
     REQUEST(mem_resp, handshake=1, RESP(MemResponse) resp);
     SERVICE(issue, handshake=1, ARG(FuRequest) req);
     SERVICE(pop_result, handshake=1, RESP(WritebackEvent) wb);
+    QUERY(can_accept, bool);
+    QUERY(has_result, bool);
+    QUERY(status, UnitStatus);
 }
 
 STRUCT(LSUSlot) {

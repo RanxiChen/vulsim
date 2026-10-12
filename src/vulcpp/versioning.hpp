@@ -25,6 +25,7 @@ vector<cppparse::MacroEntry> parseNestedMacroEntriesPreservingPositions(const cp
 struct InterfaceEntries {
     vector<cppparse::MacroEntry> entries;
     unordered_set<string> service_names;
+    unordered_set<string> query_names;
 };
 
 InterfaceEntries parseInterfaceEntries(
@@ -34,6 +35,7 @@ InterfaceEntries parseInterfaceEntries(
 void validateInterfaceImplementationEntries(
     const vector<cppparse::MacroEntry> &entries,
     const unordered_set<string> &interface_services,
+    const unordered_set<string> &interface_queries,
     const VCPPModuleContext &context,
     const string &scope_name
 );

@@ -123,7 +123,7 @@ USE_CHILD_SERVICE(mesh[*][*], receive, mesh_receive);
 
 若 `receive` 为标量服务，`mesh_receive` 的形状为 `[2,3]`；若子服务自身声明 `dims=[4]`，引出形状为 `[2,3,4]`。裸调用 `mesh_receive(args, responses)` 批量遍历全部端口，单点调用分别使用 `mesh_receive<I,J>` 或 `mesh_receive<I,J,K>`。
 
-形状按“通配维度的声明顺序 + 子事务自身维度”组合。所有目标子事务必须具有相同形状、ARG／RESP 类型和握手签名，不支持不规则数组或自动类型转换。QUERY 的引出方式保持原有单通配和显式索引语义，不增加批量接口。
+形状按“通配维度的声明顺序 + 子事务自身维度”组合。所有目标子事务必须具有相同形状、ARG／RESP 类型和握手签名，不支持不规则数组或自动类型转换。QUERY 通配引出支持多个通配维度，返回按通配形状嵌套的 `std::array` 快照，使用普通无参调用；维度不属于函数调用。
 
 
 ## 阵列化连接规则
@@ -345,8 +345,21 @@ CONNECT_CR_R(mesh[HEI-1][0], right_out, spill);
 4. 在内部规则连接的源实例侧，`$` / `?` 若出现，则必须单独占据一个维度，不能写成带运算的表达式。
 5. 在内部规则连接的目的实例侧，`$` / `?` 可以出现在任意合法索引表达式中。
 6. `*` 仅允许出现在子实例与父模块边界连接中。
-7. 边界事务连接和子服务引出允许多个 `*`；`USE_CHILD_QUERY` 仍最多支持一个。
+7. 边界事务连接和子服务引出允许多个 `*`；`USE_CHILD_QUERY` 也支持多个通配维度，并把维度叠加到返回类型上。
 8. 阵列化子实例若参与连接或 `USE_CHILD_SERVICE`，必须显式写出索引表达式，不能只写实例名。
 9. `CONNECT_CR_S(mesh[*][WID-1], right_out, output)` 这种写法要求父模块端口 `output` 本身也是维度匹配的阵列化事务端口。
 10. 引出的阵列 REQUEST 支持完整坐标模板调用和裸调用；裸调用的 ARG／RESP 必须为匹配形状的嵌套 `std::array`，最后一维变化最快。
 11. 普通事务连接必须匹配各维大小，而不仅是端口总数；边界连接的形状为通配维度与子事务维度的组合。
+
+## QUERY 通配快照
+
+```cpp
+CHILD_INSTANCE(Node, mesh, dims=[HEI,WID]);
+USE_CHILD_QUERY(mesh[*][*], status, snapshot, Status);
+auto values = snapshot();
+Status last = values[HEI-1][WID-1];
+```
+
+`snapshot()` 返回 `std::array<std::array<Status,WID>,HEI>`。若 Status 已是数组别名，原有维度在更内层保留。`mesh[*][0]` 只在返回值上添加 HEI 维度；具体实例 `mesh[0][0]` 不添加维度。可使用 dims 显式校验通配形状，但不能通过 dims 更改形状。
+
+QUERY 始终是无参、非模板函数；禁止使用 QUERY 的 `dims` 属性或以 `snapshot<...>()` 调用引出的 QUERY。有 INTERFACE 的模块必须在接口块内声明所有 QUERY，并在所选实现中提供匹配实现。

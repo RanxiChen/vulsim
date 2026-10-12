@@ -276,15 +276,6 @@ static bool tryResolveConcreteInstance(
     return true;
 }
 
-static vector<size_t> collectWildcardDims(const ParsedInstanceExpr &parsed) {
-    vector<size_t> dims;
-    for (size_t i = 0; i < parsed.index_exprs.size(); ++i) {
-        if (stringop::trim(parsed.index_exprs[i]) == "*") {
-            dims.push_back(i);
-        }
-    }
-    return dims;
-}
 
 } // namespace
 
@@ -472,72 +463,45 @@ void staticalizeConnections(InstantiationContext &ctx) {
         }
     }
 
-    // child query uses
+    // Wildcard child queries aggregate values. Their shape belongs to the
+    // returned std::array, never to function template parameters.
     instance.child_query_uses.clear();
     for (const auto &temp_use : temp.child_query_uses) {
-        const ParsedInstanceExpr child_expr = parseInstanceExpr(temp_use.instance_expr);
-        const auto &child_decl = requireInstanceDecl(instance.instances, child_expr.base_name, "processing USE_CHILD_QUERY");
-        const VulStaticTypeSignature declared_type = parseTypeSignature(temp_use.ret_type, local_config_lib);
-        auto materialize_use = [&](const string &concrete_name, ConfigRealValue alias_index, bool alias_indexed) {
+        const auto expr = parseInstanceExpr(temp_use.instance_expr);
+        const auto &decl = requireInstanceDecl(instance.instances, expr.base_name, "processing USE_CHILD_QUERY");
+        if (expr.index_exprs.size() != decl.array_dims.size())
+            throw VulException("Array child instance requires explicit indices in USE_CHILD_QUERY");
+        vector<ConfigRealValue> shape;
+        uint64_t count = 1;
+        for (size_t d = 0; d < expr.index_exprs.size(); ++d) {
+            if (stringop::trim(expr.index_exprs[d]) == "*") {
+                shape.push_back(decl.array_dims[d]);
+                if (uint64_t(decl.array_dims[d]) > UINT32_MAX / count)
+                    throw VulException("USE_CHILD_QUERY wildcard shape product must fit uint32_t");
+                count *= decl.array_dims[d];
+            }
+        }
+        check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name, temp_use.dims, temp_use.has_dims, shape);
+        const auto type = parseTypeSignature(temp_use.ret_type, local_config_lib);
+        for (uint32_t i = 0; i < count; ++i) {
+            auto wildcard = portCoordinates(i, shape);
+            vector<ConfigRealValue> coordinates;
+            size_t w = 0;
+            for (size_t d = 0; d < expr.index_exprs.size(); ++d) {
+                const auto value = stringop::trim(expr.index_exprs[d]) == "*" ? wildcard[w++]
+                    : calculateConstexprValue(expr.index_exprs[d], local_config_lib);
+                if (value < 0 || value >= decl.array_dims[d])
+                    throw VulException("Indexed child instance out of range in USE_CHILD_QUERY");
+                coordinates.push_back(value);
+            }
             VulStaticChildQueryUse use;
             use.alias_name = temp_use.alias_name;
-            use.instance_name = concrete_name;
+            use.instance_name = arrayInstanceName(expr.base_name, coordinates);
             use.query_name = temp_use.query_name;
-            use.ret_type = declared_type;
-            use.alias_indexed = alias_indexed;
-            use.alias_index = alias_index;
+            use.ret_type = type;
+            use.return_dims = shape;
+            use.alias_index = i;
             instance.child_query_uses.push_back(std::move(use));
-        };
-
-        if (child_expr.index_exprs.empty()) {
-            if (child_decl.isArrayed()) {
-                throw VulException("Array child instance '" + child_expr.base_name + "' requires explicit indices in USE_CHILD_QUERY");
-            }
-            check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name, temp_use.dims, temp_use.has_dims, {});
-            materialize_use(child_expr.base_name, 0, false);
-            continue;
-        }
-        if (child_expr.index_exprs.size() != child_decl.array_dims.size()) {
-            throw VulException("Dimension mismatch for child instance '" + child_expr.base_name + "' in USE_CHILD_QUERY");
-        }
-        vector<size_t> wildcard_dims = collectWildcardDims(child_expr);
-        if (wildcard_dims.size() > 1) {
-            throw VulException("Only one '*' wildcard is supported in USE_CHILD_QUERY");
-        }
-        if (wildcard_dims.empty()) {
-            string concrete_name;
-            if (!tryResolveConcreteInstance(child_expr, child_decl, local_config_lib, {}, concrete_name)) {
-                throw VulException("Indexed child instance out of range in USE_CHILD_QUERY");
-            }
-            check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name, temp_use.dims, temp_use.has_dims, {});
-            materialize_use(concrete_name, 0, false);
-            continue;
-        }
-
-        const size_t wildcard_dim = wildcard_dims[0];
-        check_child_alias_dims("USE_CHILD_QUERY", temp_use.alias_name,
-                               temp_use.dims, temp_use.has_dims, {child_decl.array_dims[wildcard_dim]});
-        for (ConfigRealValue wildcard_idx = 0; wildcard_idx < child_decl.array_dims[wildcard_dim]; ++wildcard_idx) {
-            vector<ConfigRealValue> concrete_indices;
-            concrete_indices.reserve(child_expr.index_exprs.size());
-            bool valid = true;
-            for (size_t dim = 0; dim < child_expr.index_exprs.size(); ++dim) {
-                if (dim == wildcard_dim && stringop::trim(child_expr.index_exprs[dim]) == "*") {
-                    concrete_indices.push_back(wildcard_idx);
-                    continue;
-                }
-                ConfigRealValue idx = calculateConstexprValue(child_expr.index_exprs[dim], local_config_lib);
-                if (idx < 0 || idx >= child_decl.array_dims[dim]) {
-                    valid = false;
-                    break;
-                }
-                concrete_indices.push_back(idx);
-            }
-            if (!valid) {
-                continue;
-            }
-            string concrete_name = arrayInstanceName(child_expr.base_name, concrete_indices);
-            materialize_use(concrete_name, wildcard_idx, true);
         }
     }
 

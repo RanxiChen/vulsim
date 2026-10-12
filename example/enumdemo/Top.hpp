@@ -4,6 +4,8 @@
 
 INTERFACE() {
     SERVICE(set_state, ARG(CoreState) next_state, ARG(uint32_t) next_code);
+    QUERY(current_state, CoreState);
+    QUERY(snapshot, StatusSnapshot);
 }
 
 REGISTER(state, CoreState) {

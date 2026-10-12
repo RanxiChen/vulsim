@@ -12,6 +12,8 @@ INTERFACE() {
     REQUEST(dcache_resp, RESP(bool) hit, RESP(MemResponse) resp);
     REQUEST(trace_wb, ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
     REQUEST(trace_halt, ARG(uint64_t) pc);
+    QUERY(status, CoreStatus);
+    QUERY(peek_links, RegReadPair);
 }
 
 HELPER() {

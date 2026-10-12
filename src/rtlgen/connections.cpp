@@ -293,36 +293,25 @@ void _procChildrenAndConnection(RTLGenContext &ctx) {
         flatten_type_signature(query_iter->second.ret_type, ctx.local_bundlelib, "value", width, flat_fields);
 
 
-            const bool is_alias_arrayed = group.front().alias_indexed;
-            const string ret_type_str = query_iter->second.ret_type.toString();
-            if (is_alias_arrayed) {
-                ctx.hls_helpers.push_back("auto " + alias_name + " = [&]<uint32_t IDX = 0>() -> " + ret_type_str + " {\n");
-                for (size_t i = 0; i < group.size(); ++i) {
-                    const string signal_base = childQuerySignalBase(group[i].instance_name, group[i].query_name);
-                    const string value_name = queryPort(signal_base);
-                    string branch = (i == 0 ? "if constexpr" : "else if constexpr");
-                    ctx.hls_helpers.push_back("  " + branch + " (IDX == " + std::to_string(group[i].alias_index) + ") {\n");
-                    ctx.hls_helpers.push_back("    " + ret_type_str + " value = " +
-                                              apiinline::defaultValueExprForType(query_iter->second.ret_type, ctx.local_bundlelib) + ";\n");
-                    for (const auto &field : flat_fields) {
-                        ctx.hls_helpers.push_back("    " + field.name + " = " + typedExtractExpr(field, value_name) + ";\n");
-                    }
-                    ctx.hls_helpers.push_back("    return value;\n");
-                    ctx.hls_helpers.push_back("  }\n");
-                }
-                ctx.hls_helpers.push_back("};\n");
-            } else {
-                const string signal_base = childQuerySignalBase(group.front().instance_name, group.front().query_name);
-                const string value_name = queryPort(signal_base);
-                ctx.hls_helpers.push_back("auto " + alias_name + " = [&]() -> " + ret_type_str + " {\n");
-                ctx.hls_helpers.push_back("  " + ret_type_str + " value = " +
-                                          apiinline::defaultValueExprForType(query_iter->second.ret_type, ctx.local_bundlelib) + ";\n");
-                for (const auto &field : flat_fields) {
-                    ctx.hls_helpers.push_back("  " + field.name + " = " + typedExtractExpr(field, value_name) + ";\n");
-                }
-                ctx.hls_helpers.push_back("  return value;\n");
-                ctx.hls_helpers.push_back("};\n");
-            }
+        const auto &shape = group.front().return_dims;
+        const string element_type = query_iter->second.ret_type.toString();
+        const string result_type = portArrayType(element_type, shape);
+        ctx.hls_helpers.push_back("auto " + alias_name + " = [&]() -> " + result_type + " {\n");
+        if (!shape.empty()) ctx.hls_helpers.push_back("  " + result_type + " values{};\n");
+        for (const auto &use : group) {
+            const string value_name = queryPort(childQuerySignalBase(use.instance_name, use.query_name));
+            // Use a separate scalar temporary for each child so struct, enum,
+            // Int and existing array return types all share the same unpacking.
+            ctx.hls_helpers.push_back("  {\n    " + element_type + " value = " +
+                                      apiinline::defaultValueExprForType(query_iter->second.ret_type, ctx.local_bundlelib) + ";\n");
+            for (const auto &field : flat_fields)
+                ctx.hls_helpers.push_back("    " + field.name + " = " + typedExtractExpr(field, value_name) + ";\n");
+            if (shape.empty()) ctx.hls_helpers.push_back("    return value;\n");
+            else ctx.hls_helpers.push_back("    values" + portSubscript(use.alias_index, shape) + " = value;\n");
+            ctx.hls_helpers.push_back("  }\n");
+        }
+        if (!shape.empty()) ctx.hls_helpers.push_back("  return values;\n");
+        ctx.hls_helpers.push_back("};\n");
 
     }
 }

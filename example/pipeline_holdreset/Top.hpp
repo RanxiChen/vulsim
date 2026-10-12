@@ -4,6 +4,7 @@
 
 INTERFACE() {
     SERVICE(step, ARG(bool) in_valid, ARG(uint32_t) in_data, ARG(bool) stall, ARG(bool) flush);
+    QUERY(snapshot, PipelineSnapshot);
 }
 
 REGISTER(pipe, PipeStage, ports=1, dims=[PIPE_DEPTH]) {

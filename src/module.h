@@ -229,6 +229,8 @@ struct VulTempServ : public VulTempReqServBase {
 };
 
 struct VulTempQuery {
+    bool is_declaration = false;
+    VulDebugLoc source_loc;
     string name;
     string ret_type;
     vector<string> codelines;
@@ -371,7 +373,7 @@ struct VulStaticChildQueryUse {
     InstanceName instance_name;
     ReqServName query_name;
     VulStaticTypeSignature ret_type;
-    bool alias_indexed = false;
+    vector<ConfigRealValue> return_dims;
     ConfigRealValue alias_index = 0;
 };
 

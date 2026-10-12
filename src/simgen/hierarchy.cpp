@@ -123,23 +123,18 @@ void emitHierarchy(ModuleGenContext &ctx) {
         if (!(group.front().ret_type == query_iter->second.ret_type)) {
             throw VulException("USE_CHILD_QUERY return type mismatch for alias " + alias_name);
         }
-        const string rettype = query_iter->second.ret_type.toString();
-        const bool is_alias_arrayed = group.front().alias_indexed;
-        if (is_alias_arrayed) {
-            decl_private_field.push_back("template <uint32_t IDX = 0>\n");
-        }
+        const auto &shape = group.front().return_dims;
+        const string rettype = portArrayType(query_iter->second.ret_type.toString(), shape);
         decl_private_field.push_back(rettype + " " + alias_name + "() const {\n");
-        if (!is_alias_arrayed) {
+        if (shape.empty()) {
             decl_private_field.push_back(CodeTab + "return " + childPtrFieldName(mod, group.front().instance_name) + "->" + group.front().query_name + "();\n");
         } else {
-            decl_private_field.push_back(CodeTab + "static_assert(IDX < " + std::to_string(group.size()) + ", \"Child query index out of range\");\n");
-            for (size_t i = 0; i < group.size(); ++i) {
-                const auto &use = group[i];
-                string branch = (i == 0 ? "if constexpr" : "else if constexpr");
-                decl_private_field.push_back(CodeTab + branch + " (IDX == " + std::to_string(use.alias_index) + ") {\n");
-                decl_private_field.push_back(CodeTab + CodeTab + "return " + childPtrFieldName(mod, use.instance_name) + "->" + use.query_name + "();\n");
-                decl_private_field.push_back(CodeTab + "}\n");
+            decl_private_field.push_back(CodeTab + rettype + " values{};\n");
+            for (const auto &use : group) {
+                decl_private_field.push_back(CodeTab + "values" + portSubscript(use.alias_index, shape) + " = " +
+                                            childPtrFieldName(mod, use.instance_name) + "->" + use.query_name + "();\n");
             }
+            decl_private_field.push_back(CodeTab + "return values;\n");
         }
         decl_private_field.push_back("}\n");
     }

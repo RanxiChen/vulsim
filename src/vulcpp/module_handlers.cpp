@@ -298,7 +298,9 @@ public:
         VulTempQuery query;
         query.name = entry.args[0];
         query.ret_type = entry.args[1];
-        context.declareName(query.name, "QUERY", entry);
+        query.is_declaration = !entry.has_body;
+        query.source_loc = context.toDebugLoc(entry.pos);
+        context.declareLogicName(query.name, "QUERY", query.is_declaration, entry);
         query.codelines = entry.body;
         query.codelines_debug = context.bodyDebugLocs(entry);
         VulErrorContextGuard _err{"Processing QUERY '" + query.name + "' at " + context.getOriginalPosition(entry.pos)};

@@ -5,6 +5,7 @@
 INTERFACE() {
     SERVICE(write_scalar, ARG(uint32_t) value);
     SERVICE(write_payload, ARG(Payload) next_payload);
+    QUERY(summary, RegisterSummary);
 }
 
 REGISTER(scalar_reg, uint32_t) {

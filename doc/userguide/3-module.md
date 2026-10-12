@@ -41,21 +41,22 @@ VERSION(other_version) {
 
 `INTERFACE()` 必须是模块中的第一个顶层宏，并且必须位于所有实现代码之前。`USE_VERSION(name);` 用于选择当前实际使用的实现版本；如果使用 `USE_VERSION`，它必须紧跟在 `INTERFACE()` 之后，后面必须定义至少一个 `VERSION(name) { ... }`，并且被 `USE_VERSION` 选中的版本必须存在。
 
-`INTERFACE()` 中只允许出现 `PARAMETER`、`REQUEST` 和不带代码块的 `SERVICE` 声明：
+`INTERFACE()` 中只允许出现 `PARAMETER`、`REQUEST` 和不带代码块的 `SERVICE`、`QUERY` 声明：
 
 ```cpp
 INTERFACE() {
     PARAMETER(WIDTH, 32);
     REQUEST(out, ARG(uint32_t) data);
     SERVICE(in, handshake=1, ARG(uint32_t) data);
+    QUERY(status, uint32_t);
 }
 ```
 
-`INTERFACE` 中的 `SERVICE` 仅为前置声明（参考后续 SERVICE 定义），不提供实现代码块。
+`INTERFACE` 中的 `SERVICE` 和 `QUERY` 仅为前置声明（参考后续 SERVICE 定义），不提供实现代码块。
 
 如果定义了 `INTERFACE()` 但没有定义 `USE_VERSION(...)`，这是合法的；此时不能再定义任何 `VERSION(...)`，`INTERFACE()` 后面的顶层宏整体构成默认实现版本。
 
-实现版本中可以包含具体实现，例如 `CONFIG`、`STRUCT`、`REGISTER`、`WIRE`、`BRAM`、`QUEUE`、`CHILD_INSTANCE`、`CONNECT_*`、`SERVICE(...) { ... }` 和 `TICK_IMPL() { ... }`。无论是默认实现还是 `VERSION(name)`，都不能重新声明 `PARAMETER` 或 `REQUEST`；`SERVICE` 必须提供代码块，并且必须对应 `INTERFACE` 中已经声明过的同名服务。
+实现版本中可以包含具体实现，例如 `CONFIG`、`STRUCT`、`REGISTER`、`WIRE`、`BRAM`、`QUEUE`、`CHILD_INSTANCE`、`CONNECT_*`、`SERVICE(...) { ... }` 和 `TICK_IMPL() { ... }`。无论是默认实现还是 `VERSION(name)`，都不能重新声明 `PARAMETER` 或 `REQUEST`；`SERVICE` 和 `QUERY` 必须提供代码块，并且必须对应 `INTERFACE` 中已经声明过的同名接口。所选实现必须实现全部 QUERY 声明，且返回类型必须匹配。
 
 解析时，工具会把 `INTERFACE()` 的内容和所选实现内容按顺序拼接后送入普通模块解析流程。因此接口中的 `SERVICE` 声明和实现中的 `SERVICE` 实现仍遵循普通前置声明规则：`ARG/RESP` 的数量、类型和名字、`dims`、`handshake` 必须一致；如果声明中显式写了 `priority=`，实现也必须写同样的 priority 值。嵌套域中的错误位置和 RTL debug 信息仍保留用户源文件中的原始行号。
 
@@ -459,6 +460,10 @@ QUERY(status, Status) {
 }
 ```
 
+带 INTERFACE 的模块必须先在 INTERFACE 中写 `QUERY(name, type);`，随后在默认实现或所选 VERSION 中提供同名、同返回类型的实现。QUERY 声明无代码块；实现必须有代码块。重复声明、重复实现、缺少实现及返回类型不匹配均报错。没有 INTERFACE 的模块仍可直接定义 QUERY，也可使用匹配的前置声明。
+
+QUERY 始终是普通无参函数，不接受 `dims` 或调用模板坐标。返回数组时，通过 ALIAS 定义数组返回类型。
+
 `QUERY` 不参与 `CONNECT` 连接，没有 `ARG/RESP` 参数，代表当前周期稳定状态下的一次无副作用观测。`QUERY` 中只应读取本模块状态、组合线网、内置组件 query 或已引入的子实例 query。
 
 ### TICK_IMPL() { ... }
@@ -520,7 +525,7 @@ TICK_IMPL() {
 
 `dims=[...]` 用于显式声明通配实例的阵列形状，必须逐维匹配 `instance` 表达式中的 `*` 维度；省略时从通配维度推断。无 `*` 时省略或写 `dims=[]`。子服务自身的事务维度继续由工具追加到引出端口形状。
 
-### USE_CHILD_QUERY(instance, query, alias, type, dims=[N])
+### USE_CHILD_QUERY(instance, query, alias, type, dims=[...])
 
 把子实例 query 引入当前模块：
 
@@ -533,9 +538,20 @@ QUERY(snapshot, Status) {
 }
 ```
 
-阵列化子实例同样可以使用具体索引或一个 `*` 通配维度。通配维度引出的 alias 使用模板参数调用；`dims=[N]` 必须匹配该通配维度，省略时自动推断。
+`type` 始终是子 QUERY 本身的返回类型。具体索引引出保持这个类型；通配引出支持多个 `*`，每个通配维度按实例声明顺序在返回类型外层嵌套一层 `std::array`。显式 `dims=[...]` 必须逐维匹配通配形状，省略时自动推断。
 
-QUERY 不像 SERVICE 一样有阵列化选项。如需批量透传阵列化子实例的 QUERY，推荐实现为让 QUERY 返回一个数组或结构体类型，在 QUERY 内部循环调用子实例 query。
+```cpp
+CHILD_INSTANCE(Node, mesh, dims=[2,3]);
+USE_CHILD_QUERY(mesh[*][*], status, mesh_status, Status);
+USE_CHILD_QUERY(mesh[1][*], status, row_status, Status, dims=[3]);
+
+// 普通无参调用，返回快照值：
+auto all = mesh_status(); // std::array<std::array<Status,3>,2>
+auto row = row_status();  // std::array<Status,3>
+Status s = all[1][2];
+```
+
+每次调用观测所有匹配实例并返回值副本，最后一维变化最快。子 QUERY 返回类型已有的数组维度保留在更内层，不会展平成一个维度。多次取元素时建议先保存一次快照。旧的 `mesh_status<0>()` 写法不再支持，改为 `mesh_status()[0]` 或保存快照后索引。QUERY 实现自身没有阵列化选项。
 
 ## 3.8 连接声明
 

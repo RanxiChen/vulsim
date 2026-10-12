@@ -9,6 +9,7 @@
 // the current data register and feeds the boolean register back into that
 // transform.  Register writes remain local to the corresponding if branch.
 INTERFACE() {
+    QUERY(snapshot, FsmSnapshot);
 }
 
 REGISTER(state, uint8_t) {

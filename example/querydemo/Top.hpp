@@ -6,6 +6,7 @@
 
 INTERFACE() {
     REQUEST(output, ARG(uint32_t) data);
+    QUERY(snapshot, TopSnapshot);
 }
 
 REGISTER(mirror, uint32_t) {

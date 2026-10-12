@@ -14,6 +14,7 @@ INTERFACE() {
             RESP(uint32_t) ready_after,
             RESP(U32x2) popped);
     SERVICE(clear_push, ARG(U32x3) values, ARG(uint32_t) num);
+    QUERY(status, QueueMPStatus);
 }
 
 QUEUE(q, uint32_t, Q_DEPTH, enq_width=Q_ENQ_WIDTH, deq_width=Q_DEQ_WIDTH);

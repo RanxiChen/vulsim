@@ -24,11 +24,11 @@
 struct VCPPModuleContext {
     VulTempModule temp;
     unordered_map<string, string> local_names;
-    struct ServiceNameState {
+    struct LogicNameState {
         bool has_declaration = false;
         bool has_implementation = false;
     };
-    unordered_map<string, ServiceNameState> service_names;
+    unordered_map<string, LogicNameState> logic_names;
     unordered_map<string, string> *global_names = nullptr;
     bool is_global_header = false;
     std::vector<uint32_t> line_mapping;
@@ -38,6 +38,7 @@ struct VCPPModuleContext {
     VulDebugLocs bodyDebugLocs(const cppparse::MacroEntry &entry) const;
     string macroPosition(const cppparse::MacroEntry &entry) const;
     void declareName(const string &raw_name, const string &kind, const cppparse::MacroEntry &entry);
+    void declareLogicName(const string &raw_name, const string &kind, bool is_declaration, const cppparse::MacroEntry &entry);
     void declareServiceName(const string &raw_name, bool is_declaration, const cppparse::MacroEntry &entry);
 };
 

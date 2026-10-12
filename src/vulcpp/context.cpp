@@ -107,60 +107,35 @@ void VCPPModuleContext::declareName(
     local_names[declared_name] = kind;
 }
 
-void VCPPModuleContext::declareServiceName(
-    const string &raw_name,
-    bool is_declaration,
-    const cppparse::MacroEntry &entry
-) {
-    const string declared_name = trim(raw_name);
-    const string position = macroPosition(entry);
-    const string kind = is_declaration ? "SERVICE declaration" : "SERVICE implementation";
-    VulErrorContextGuard _err{
-        "declaring " + kind + " name '" +
-        (declared_name.empty() ? string("<empty>") : declared_name) +
-        "' at " + position
-    };
-    if (declared_name.empty()) {
-        throw VulException(kind + " name cannot be empty at " + position);
-    }
-    if (is_global_header) {
-        throw VulException("SERVICE is not allowed in global header scope at " + position);
-    }
-    auto local_iter = local_names.find(declared_name);
-    if (local_iter != local_names.end() && local_iter->second != "SERVICE") {
-        throw VulException(
-            "Module scope name redefinition: '" + declared_name +
-            "' was already defined as " + local_iter->second +
-            ", cannot redefine as " + kind + " at " + position
-        );
-    }
-    if (local_iter == local_names.end() && global_names != nullptr) {
-        auto global_iter = global_names->find(declared_name);
-        if (global_iter != global_names->end()) {
-            throw VulException(
-                "Module scope name conflicts with global header name: '" + declared_name +
-                "' was already defined globally as " + global_iter->second +
-                ", cannot define as " + kind + " at " + position
-            );
-        }
-    }
+void VCPPModuleContext::declareServiceName(const string &raw_name, bool is_declaration,
+                                          const cppparse::MacroEntry &entry) {
+    declareLogicName(raw_name, "SERVICE", is_declaration, entry);
+}
 
-    ServiceNameState &state = service_names[declared_name];
+void VCPPModuleContext::declareLogicName(const string &raw_name, const string &kind,
+                                        bool is_declaration, const cppparse::MacroEntry &entry) {
+    const string name = trim(raw_name);
+    const string position = macroPosition(entry);
+    if (is_global_header) throw VulException(kind + " is not allowed in global header scope at " + position);
+    auto prior = local_names.find(name);
+    if (prior == local_names.end()) {
+        declareName(name, kind, entry);
+    } else if (prior->second != kind) {
+        throw VulException("Module scope name redefinition: '" + name + "' was already defined as " +
+                           prior->second + ", cannot redefine as " + kind + " at " + position);
+    }
+    auto &state = logic_names[name];
     if (is_declaration) {
-        if (state.has_declaration) {
-            throw VulException("Duplicate SERVICE declaration for '" + declared_name + "' at " + position);
-        }
-        if (state.has_implementation) {
-            throw VulException("SERVICE declaration for '" + declared_name + "' must appear before its implementation at " + position);
-        }
+        if (state.has_declaration)
+            throw VulException("Duplicate " + kind + " declaration for '" + name + "' at " + position);
+        if (state.has_implementation)
+            throw VulException(kind + " declaration for '" + name + "' must appear before its implementation at " + position);
         state.has_declaration = true;
     } else {
-        if (state.has_implementation) {
-            throw VulException("Duplicate SERVICE implementation for '" + declared_name + "' at " + position);
-        }
+        if (state.has_implementation)
+            throw VulException("Duplicate " + kind + " implementation for '" + name + "' at " + position);
         state.has_implementation = true;
     }
-    local_names[declared_name] = "SERVICE";
 }
 
 string VCPPTestContext::getOriginalPosition(const cppparse::LinePosition &pos) const {

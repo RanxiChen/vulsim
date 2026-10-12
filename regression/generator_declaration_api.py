@@ -32,6 +32,7 @@ ENUM(name=State) { Idle=0, Active=1 };
     REQUEST(name=report, ARG(Word) value);
     SERVICE(name=load, ARG(Word) value);
     SERVICE(name=capture, ARG(Word) value);
+    QUERY(result, Word);
 }
 USE_VERSION(name=selected);
 VERSION(name=unused) {

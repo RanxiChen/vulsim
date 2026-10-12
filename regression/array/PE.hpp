@@ -4,6 +4,7 @@ INTERFACE() {
     PARAMETER(ROW, 3);
     SERVICE(submit, ARG(uint32_t) data);
     REQUEST(stream, ARG(uint32_t) data);
+    QUERY(result, uint32_t);
 }
 CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+9, PARAM(DEPTH)=ROW+1);
 USE_CHILD_SERVICE(fpu, load, load, ARG(uint32_t) data);

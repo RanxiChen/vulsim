@@ -7,6 +7,7 @@
 INTERFACE() {
     REQUEST(event, ARG(uint8_t) state, ARG(uint8_t) count);
     SERVICE(command, ARG(uint8_t) opcode);
+    QUERY(snapshot, FsmSnapshot);
 }
 
 REGISTER(state, uint8_t) {

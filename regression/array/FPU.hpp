@@ -6,6 +6,7 @@ INTERFACE() {
     PARAMETER(TAG, 23);
     PARAMETER(DERIVED, DEPTH + 3);
     SERVICE(load, ARG(uint32_t) data);
+    QUERY(result, uint32_t);
 }
 REGISTER(value, Int<WIDTH>) { value = TAG; }
 QUEUE(queue, uint32_t, DEPTH);

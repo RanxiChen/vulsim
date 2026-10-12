@@ -284,10 +284,10 @@
 | 实现文件 | 主要函数与职责 |
 |---|---|
 | `instantiate.cpp` | `instantiateModule`；求值参数、配置和局部类型，按原顺序编排各静态化阶段。 |
-| `transactions.cpp` | `staticalizeReqServ`、`staticalizeTransactions`、`staticalizeTicks`；匹配 Service 声明／实现，保留逻辑块编号与 priority。 |
+| `transactions.cpp` | `staticalizeReqServ`、`staticalizeTransactions`、`staticalizeTicks`；匹配 Service／QUERY 声明与实现，要求 QUERY 返回类型匹配且具有唯一实现；保留逻辑块编号与 priority。 |
 | `resources.cpp` | `staticalizeResources`；静态化 Register、Wire、Queue、BRAM、ROM。 |
 | `children.cpp` | `staticalizeChildren`；子实例维度、参数覆盖与 COORD 绑定。 |
-| `connections.cpp` | `staticalizeConnections`；连接索引解析、通配边界连接与子接口引出。 |
+| `connections.cpp` | `staticalizeConnections`；连接索引解析、通配边界连接与子接口引出；QUERY 支持多通配，记录返回值外层形状与逐实例槽位。 |
 | `call_analysis.cpp` | `detectRequestCallInLogicBlocks`；`joinCode`、`transactionCallIndices`、`activeConstexprCode` 供调度阶段提取静态有效调用并保留诊断偏移。 |
 | `scheduling.cpp` | `setupUpdateSequence`；建立具体事务端点调用图，诊断调用环、重复调用、多更新源及更新约束环，将 priority 投影到公共祖先。 |
 | `detail.hpp` | `vulmodule::detail::InstantiationContext` 与内部阶段声明；共享目标实例、临时模块、配置／类型库和逻辑块编号。 |
@@ -324,7 +324,7 @@
 | `declarations.cpp` | `_procConstAndBundle`、`_procWires`；常量、类型、helper 和 wire。 |
 | `registers.cpp` | `_procRegisters`；寄存器端口、RTL 实例、零初始化及用户复位块。 |
 | `transactions.cpp` | `_procRequests`、`_procServicesAndTicks`、`_procQueries`；事务端口、逻辑入口及 priority。 |
-| `connections.cpp` | `_procChildrenAndConnection`；子模块线网、Service／Query 引出与转发。 |
+| `connections.cpp` | `_procChildrenAndConnection`；子模块线网、Service／Query 引出与转发；通配 QUERY 生成非模板快照 helper，逐实例解包到返回数组。 |
 | `queues.cpp` | `_procQueues`；Queue／QueueMP 端口及 RTL 实例，计数输入使用硬件计数位宽。 |
 | `memories.cpp` | `_procBRAMAndROM`；存储器端口、实例及 ROM 资源文件。 |
 | `verilator.cpp` | `genVerilatorTestMainCpp`；测试绑定、数组事务与复位，宽端口按 Verilator 存储布局转换。 |
@@ -377,7 +377,7 @@
 | `module.cpp` | `genStaticModuleCodeHpp`；局部声明、Tick／helper、功能阶段编排及最终声明／实现组装。 |
 | `transactions.cpp` | `emitTransactions`；Request、Service、Query 包装及边界 Service 转发。 |
 | `resources.cpp` | `emitResources`；状态组件、复位值零初始化、用户复位、周期提交与资源清单。 |
-| `hierarchy.cpp` | `emitHierarchy`；具体子实例类型、坐标模板、请求连接与子接口引出。 |
+| `hierarchy.cpp` | `emitHierarchy`；具体子实例类型、坐标模板、请求连接与子接口引出；通配 QUERY 生成无参快照函数，以通配维度嵌套返回 std::array。 |
 | `tracing.cpp` | `emitTracing`；trace 注册、阵列坐标过滤和周期采样。 |
 | `harness.cpp` | `genStaticTestHarnessCodeHpp`、`genStaticTestHarnessHpp`、`genStaticTestMainHpp`；测试绑定、trace／断点集成及 main。 |
 | `detail.hpp` | `simgen::detail::ModuleGenContext`；持有完整具体生成视图、类名及各代码段／调试映射，生命周期覆盖所有阶段。 |
@@ -495,3 +495,7 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 **文件功能**：读取 VULC++ 工程、递归实例化模块，并建立仿真 harness 与顶层的连接。
 
 - `parseVcppStaticProjectImpl(...)`：解析工程并逐坐标展开具体实例，落实 COORD 绑定和普通参数覆盖，保留声明路径用于共享模板文件；构建用于更新顺序分析的 TestMain；子 Request 驱动的顶层内部 Service 不添加虚构的外部调用源。
+
+## QUERY 声明与快照回归
+
+`regression/generator_query_api.py` 覆盖 INTERFACE 必需声明、返回类型匹配与缺失／重复实现；验证 simgen 与 RTL/API inline 中多维、部分通配、数组返回嵌套、结构体、枚举、宽 Int、复位与快照值副本。QUERY 本身始终是普通无参函数，阵列只属于通配引出返回值。

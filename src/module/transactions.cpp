@@ -15,6 +15,7 @@
 #include "detail.hpp"
 #include <algorithm>
 #include <optional>
+#include <unordered_set>
 
 VulStaticReqServ staticalizeReqServ(const VulTempReqServBase &item, const VulStaticConfigLib &config_lib) {
     VulStaticReqServ static_req;
@@ -201,10 +202,24 @@ void staticalizeTransactions(InstantiationContext &ctx) {
         }
     }
 
-    // queries
+    // A QUERY declaration fixes the return type; only its implementation
+    // owns a logic block. This also applies to forward declarations outside INTERFACE.
+    struct QueryDeclaration { VulStaticQuery signature; VulDebugLoc location; };
+    unordered_map<string, QueryDeclaration> query_declarations;
+    std::unordered_set<string> query_implementations;
     for (const auto &query : temp.queries) {
-        VulErrorContextGuard _err{"Processing query '" + query.name + "'"};
-        instance.queries[query.name] = staticalizeQuery(query, local_config_lib);
+        VulErrorContextGuard _err{"Processing QUERY '" + query.name + "' at " +
+                                 query.source_loc.file + ":" + std::to_string(query.source_loc.line)};
+        auto signature = staticalizeQuery(query, local_config_lib);
+        if (query.is_declaration) {
+            query_declarations.emplace(query.name, QueryDeclaration{signature, query.source_loc});
+            continue;
+        }
+        auto declaration = query_declarations.find(query.name);
+        if (declaration != query_declarations.end() && declaration->second.signature.ret_type != signature.ret_type)
+            throw VulException("QUERY implementation for '" + query.name + "' does not match its forward declaration: return type differs");
+        query_implementations.insert(query.name);
+        instance.queries[query.name] = signature;
         VulLogicBlock lb;
         lb.block_id = next_logic_block_id++;
         lb.with_priority = false;
@@ -212,6 +227,11 @@ void staticalizeTransactions(InstantiationContext &ctx) {
         lb.codelines = query.codelines;
         lb.codelines_debug = query.codelines_debug;
         instance.query_logic_blocks[query.name] = lb;
+    }
+    for (const auto &[name, declaration] : query_declarations) {
+        if (!query_implementations.contains(name))
+            throw VulException("QUERY forward declaration for '" + name + "' has no matching implementation at " +
+                               declaration.location.file + ":" + std::to_string(declaration.location.line));
     }
 
 }

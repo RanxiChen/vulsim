@@ -84,7 +84,7 @@ SERVICE(input, dims=[2], ARG(uint32_t) value);
 CHILD_INSTANCE(Lane, lane, dims=[2]);
 CONNECT_S_CS(input, lane[*], input);
 USE_CHILD_QUERY(lane[*], result, lane_result, uint32_t);
-QUERY(result, Values) { return Values{lane_result<0>(), lane_result<1>()}; }
+QUERY(result, Values) { auto values = lane_result(); return Values{values[0], values[1]}; }
 ''',
     "Lane.hpp": '''
 REGISTER(saved, uint32_t);

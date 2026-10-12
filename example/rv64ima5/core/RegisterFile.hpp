@@ -5,6 +5,7 @@
 INTERFACE() {
     SERVICE(read2, ARG(uint32_t) rs1, ARG(uint32_t) rs2, RESP(RegReadPair) out);
     SERVICE(write, ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
+    QUERY(zero_and_ra, RegReadPair);
 }
 
 REGISTER(regs, uint64_t, ports=1, dims=[32]) {

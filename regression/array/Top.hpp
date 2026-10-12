@@ -5,6 +5,7 @@ INTERFACE() {
     SERVICE(submit2, dims=[4], ARG(uint32_t) data);
     SERVICE(capture1, dims=[8], ARG(uint32_t) data);
     SERVICE(capture2, dims=[4], ARG(uint32_t) data);
+    QUERY(snapshot, ArraySnapshot);
 }
 CHILD_INSTANCE(PE, arr1, dims=[8], COORD(0)=ROW);
 CHILD_INSTANCE(PE, arr2, dims=[4]);
@@ -19,12 +20,8 @@ SERVICE(capture1, dims=[8], ARG(uint32_t) data) { last.setnext(IDX, data); }
 SERVICE(capture2, dims=[4], ARG(uint32_t) data) { }
 QUERY(snapshot, ArraySnapshot) {
     ArraySnapshot s{};
-    s.first[0] = first<0>(); s.first[1] = first<1>();
-    s.first[2] = first<2>(); s.first[3] = first<3>();
-    s.first[4] = first<4>(); s.first[5] = first<5>();
-    s.first[6] = first<6>(); s.first[7] = first<7>();
-    s.second[0] = second<0>(); s.second[1] = second<1>();
-    s.second[2] = second<2>(); s.second[3] = second<3>();
+    s.first = first();
+    s.second = second();
     for (uint32_t i = 0; i < 8; ++i) s.streamed[i] = last[i];
     return s;
 }

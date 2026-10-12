@@ -145,7 +145,7 @@ RetType v = alias();
 ```
 
 - 阵列化实例索引：`lane[0]`、`mesh[i][j]`。规则连接中 `$`/`?` 是源侧循环变量；源侧只能单独作维度，如 `mesh[$][?]`，目的侧可写表达式，如 `mesh[$+1][?-1]`，越界连接自动忽略。
-- `*` 用于模块边界或 `USE_CHILD_SERVICE` 的通配维度；`USE_CHILD_QUERY` 仅支持一个通配维度：
+- `*` 用于模块边界或 `USE_CHILD_SERVICE` 的通配维度；`USE_CHILD_QUERY` 同样支持多个通配维度，维度叠加到返回值的 `std::array` 上：
 
 ```cpp
 USE_CHILD_SERVICE(mesh[*][0], left_in, mesh_in, ARG(uint32_t) data);
@@ -280,3 +280,9 @@ SIMULATION() {
     }
 }
 ```
+
+## QUERY 声明和通配规则
+
+- 有 INTERFACE 时，所有 QUERY 必须先声明在 INTERFACE 内，并在默认实现或所选 VERSION 中提供同名、同返回类型的实现。QUERY 不接受 dims、ARG/RESP 或模板坐标。
+- `USE_CHILD_QUERY(instance, query, alias, T, dims=[...])` 的 T 是子 QUERY 的元素返回类型。无通配保持 T；多个通配依次在 T 外层嵌套 std::array。dims 省略时从通配形状推断，显式指定时必须逐维相同。
+- 使用 `auto values=alias(); values[i][j]` 访问通配 QUERY 快照；禁止旧的 `alias<...>()` 写法。子返回类型已有的数组维度在更内层保留，每次调用返回独立值副本。
