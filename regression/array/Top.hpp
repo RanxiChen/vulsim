@@ -1,27 +1,27 @@
 #pragma once
 #include "header.hpp"
+
 INTERFACE() {
-    SERVICE(submit1, dims=[8], ARG(uint32_t) data);
-    SERVICE(submit2, dims=[4], ARG(uint32_t) data);
-    SERVICE(capture1, dims=[8], ARG(uint32_t) data);
-    SERVICE(capture2, dims=[4], ARG(uint32_t) data);
-    QUERY(snapshot, ArraySnapshot);
+    SERVICE(left, dims=[SIZE], ARG(Operand) value);
+    SERVICE(up, dims=[SIZE], ARG(Operand) value);
+    SERVICE(clear);
+    SERVICE(right_edge, dims=[SIZE], ARG(Operand) value);
+    SERVICE(bottom_edge, dims=[SIZE], ARG(Operand) value);
+    QUERY(snapshot, MatrixState);
 }
-CHILD_INSTANCE(PE, arr1, dims=[8], PARAM(ROW)=COORD(0));
-CHILD_INSTANCE(PE, arr2, dims=[4]);
-CONNECT_S_CS(submit1, arr1[*], submit);
-CONNECT_S_CS(submit2, arr2[*], submit);
-CONNECT_CR_S(arr1[*], stream, capture1);
-CONNECT_CR_S(arr2[*], stream, capture2);
-USE_CHILD_QUERY(arr1[*], result, first, uint32_t);
-USE_CHILD_QUERY(arr2[*], result, second, uint32_t);
-REGISTER(last, uint32_t, dims=[8]);
-SERVICE(capture1, dims=[8], ARG(uint32_t) data) { last.setnext(IDX, data); }
-SERVICE(capture2, dims=[4], ARG(uint32_t) data) { }
-QUERY(snapshot, ArraySnapshot) {
-    ArraySnapshot s{};
-    s.first = first();
-    s.second = second();
-    for (uint32_t i = 0; i < 8; ++i) s.streamed[i] = last[i];
-    return s;
-}
+
+CHILD_INSTANCE(PE, mesh, dims=[SIZE, SIZE], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(1));
+CONNECT_S_CS(left, mesh[*][0], left);
+CONNECT_S_CS(up, mesh[0][*], up);
+CONNECT_CR_CS(mesh[$][?], right, mesh[$][?+1], left);
+CONNECT_CR_CS(mesh[$][?], down, mesh[$+1][?], up);
+CONNECT_CR_S(mesh[*][SIZE-1], right, right_edge);
+CONNECT_CR_S(mesh[SIZE-1][*], down, bottom_edge);
+USE_CHILD_SERVICE(mesh[*][*], clear, clear_all);
+USE_CHILD_QUERY(mesh[*][*], result, results, PEState);
+
+// Start a new job after draining the input pipeline. Reset also clears in-flight data.
+SERVICE(clear) { clear_all(); }
+SERVICE(right_edge, dims=[SIZE], ARG(Operand) value) { }
+SERVICE(bottom_edge, dims=[SIZE], ARG(Operand) value) { }
+QUERY(snapshot, MatrixState) { return results(); }

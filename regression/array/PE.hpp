@@ -1,14 +1,46 @@
 #pragma once
 #include "header.hpp"
+
 INTERFACE() {
-    PARAMETER(ROW, 3);
-    SERVICE(submit, ARG(uint32_t) data);
-    REQUEST(stream, ARG(uint32_t) data);
-    QUERY(result, uint32_t);
+    PARAMETER(ROW, 0);
+    PARAMETER(COL, 0);
+    SERVICE(left, ARG(Operand) value);
+    SERVICE(up, ARG(Operand) value);
+    SERVICE(clear);
+    REQUEST(right, ARG(Operand) value);
+    REQUEST(down, ARG(Operand) value);
+    QUERY(result, PEState);
 }
-CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+9, PARAM(DEPTH)=ROW+1);
-USE_CHILD_SERVICE(fpu, load, load, ARG(uint32_t) data);
-USE_CHILD_QUERY(fpu, result, child_result, uint32_t);
-SERVICE(submit, ARG(uint32_t) data) { load(data); }
-QUERY(result, uint32_t) { return child_result(); }
-TICK_IMPL() { stream(child_result()); }
+
+REGISTER(a, Operand, ports=2);
+REGISTER(b, Operand, ports=2);
+REGISTER(sum, uint32_t, ports=2);
+REGISTER(products, uint32_t, ports=2);
+
+SERVICE(left, ARG(Operand) value) { a.setnext<0>(value); }
+SERVICE(up, ARG(Operand) value) { b.setnext<0>(value); }
+SERVICE(clear) {
+    sum.setnext<0>(0);
+    products.setnext<0>(0);
+}
+
+TICK_IMPL() {
+    // Missing input becomes a bubble, never a repeated operand. Input port 0
+    // overrides these defaults; forwarding always reads the previous cycle.
+    Operand bubble{};
+    a.setnext<1>(bubble);
+    b.setnext<1>(bubble);
+    if (a.get().valid && b.get().valid) {
+        sum.setnext<1>(sum.get() + uint32_t(a.get().data) * uint32_t(b.get().data));
+        products.setnext<1>(products.get() + 1);
+    }
+    right(a.get());
+    down(b.get());
+}
+
+QUERY(result, PEState) {
+    PEState state{};
+    state.sum = sum.get();
+    state.products = products.get();
+    return state;
+}
