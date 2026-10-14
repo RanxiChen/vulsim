@@ -15,6 +15,7 @@
 #include "module_handlers.hpp"
 
 #include "common.hpp"
+#include "declaration_args.hpp"
 #include "../stringop.hpp"
 
 using namespace cppparse;
@@ -178,6 +179,7 @@ public:
             throw VulException("REGISTER requires at least 2 arguments at " + context.getOriginalPosition(entry.pos));
         }
         VulTempRegister reg;
+        reg.declaration_loc = context.toDebugLoc(entry.pos);
         reg.name = entry.args[0];
         reg.type = entry.args[1];
         context.declareName(reg.name, "REGISTER", entry);
@@ -192,6 +194,52 @@ public:
     }
 };
 static VCPPModuleAutoRegisterHandler<VCPPModuleREGISTER> _auto_register_REGISTER_handler;
+
+class VCPPModulePIPELINE : public VCPPModuleHandler {
+public:
+    string name() const override { return "PIPELINE"; }
+    void run(VCPPModuleContext &context, const MacroEntry &entry) override {
+        if (context.is_global_header || !entry.has_body)
+            throw VulException("PIPELINE requires a module implementation body at " + context.getOriginalPosition(entry.pos));
+        VulTempPipeline pipe;
+        pipe.declaration_loc = context.toDebugLoc(entry.pos);
+        pipe.name = entry.args.at(0);
+        pipe.latency = entry.args.at(1);
+        context.declareName(pipe.name, "PIPELINE", entry);
+        int inputs = 0, outputs = 0, iv = 0, ov = 0;
+        for (size_t i = 2; i < entry.args.size(); ++i) {
+            auto endpoint = parseMacroFragment(entry.args[i], entry.arg_pos.at(i));
+            const string kind = endpoint.name;
+            if (kind != "IREG" && kind != "OREG" && kind != "IVALID" && kind != "OVALID")
+                throw VulException("PIPELINE only accepts IREG, OREG, IVALID and OVALID endpoints at " + context.getOriginalPosition(endpoint.pos));
+            if (kind != "IREG" && endpoint.has_body)
+                throw VulException(kind + " does not accept a reset block at " + context.getOriginalPosition(endpoint.pos));
+            endpoint = normalizeDeclaration(endpoint, context.getOriginalPosition(endpoint.pos));
+            VulTempRegister reg;
+            reg.declaration_loc = context.toDebugLoc(endpoint.pos);
+            reg.name = endpoint.args.at(0);
+            reg.type = (kind == "IREG" || kind == "OREG") ? endpoint.args.at(1) : "bool";
+            reg.role = kind == "IREG" ? VulRegisterRole::Input : kind == "OREG" ? VulRegisterRole::Output : kind == "IVALID" ? VulRegisterRole::InputValid : VulRegisterRole::OutputValid;
+            inputs += kind == "IREG"; outputs += kind == "OREG"; iv += kind == "IVALID"; ov += kind == "OVALID";
+            for (size_t j = (kind == "IREG" || kind == "OREG") ? 2 : 1; j < endpoint.args.size(); ++j) {
+                auto attr = parseKeyValueArg(endpoint.args[j]);
+                if (attr->first == "ports") reg.portnum = attr->second;
+                else if (attr->first == "dims") appendDimList(reg.dims, attr->second);
+            }
+            reg.reset_codelines = endpoint.body;
+            reg.reset_codelines_debug = context.bodyDebugLocs(endpoint);
+            context.declareName(reg.name, kind, endpoint);
+            pipe.endpoints.push_back(reg.name);
+            context.temp.registers.push_back(std::move(reg));
+        }
+        if (!inputs || !outputs) throw VulException("PIPELINE requires at least one IREG and one OREG");
+        if (iv != ov || iv > 1 || ov > 1) throw VulException("PIPELINE requires exactly one IVALID and one OVALID, or neither");
+        pipe.codelines = entry.body;
+        pipe.codelines_debug = context.bodyDebugLocs(entry);
+        context.temp.pipelines.push_back(std::move(pipe));
+    }
+};
+static VCPPModuleAutoRegisterHandler<VCPPModulePIPELINE> _auto_register_PIPELINE_handler;
 
 class VCPPModuleWIRE : public VCPPModuleHandler {
 public:

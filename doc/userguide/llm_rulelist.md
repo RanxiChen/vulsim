@@ -287,3 +287,12 @@ SIMULATION() {
 - 有 INTERFACE 时，所有 QUERY 必须先声明在 INTERFACE 内，并在默认实现或所选 VERSION 中提供同名、同返回类型的实现。QUERY 不接受 dims、ARG/RESP 或模板坐标。
 - `USE_CHILD_QUERY(instance, query, alias, T, dims=[...])` 的 T 是子 QUERY 的元素返回类型。无通配保持 T；多个通配依次在 T 外层嵌套 std::array。dims 省略时从通配形状推断，显式指定时必须逐维相同。
 - 使用 `auto values=alias(); values[i][j]` 访问通配 QUERY 快照；禁止旧的 `alias<...>()` 写法。子返回类型已有的数组维度在更内层保留，每次调用返回独立值副本。
+
+## PIPELINE
+
+- `PIPELINE(name, latency, IREG(...), OREG(...), IVALID(...), OVALID(...)) { ... }` 只在模块实现中使用，latency>0；边界输入生效后恰好 latency 周期写入边界输出。
+- IREG 接受 name/type/ports 和可选复位块，外部只有 setnext；OREG 仅接受 name/type，外部只读，禁止 ports 和复位块。两者禁止 dims，类型及其别名目标必须非数组；结构体可含数组字段。内部输入是 const 值参数，输出是引用参数，不可访问其他 VUL 组件，仅可调用自封闭帮助函数。
+- IVALID/OVALID 可同时省略，否则各唯一一个；固定 bool 标量、零初始化，仅 IVALID 允许 ports。内部可读 IVALID，不能访问 OVALID；生成器自动生成等延迟 valid 通路。
+- valid 不暂停、不屏蔽计算和输出；未写入的 IVALID 保持，脉冲需明确写 false。rtlgen 必须完整定义每个 OREG，simgen 不作完整赋值／可综合检查。
+- IREG/IVALID 有复位；OREG 禁止用户复位块，其复位值由输入初值运行函数推导。全部内部寄存器、缓冲和输出恢复对应推导值，OVALID 为 false，复位清除在途事务。rtlgen 采用同步低有效 rstn 复位字面量。
+- RTLZZ 原生后端插入 latency−1 级内部寄存器；simgen 使用同级数缓冲。普通逻辑的 CIRCT 设置不改变 PIPELINE 后端。

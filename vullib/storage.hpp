@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 #pragma once
+#include <utility>
 
 #include "common.h"
 
@@ -473,6 +474,31 @@ public:
     void _reset() {
         impl_._reset();
     }
+};
+
+// Half-register views expose only the side owned by ordinary module logic.
+template<class Storage> class PipelineWriteView {
+    Storage &storage_;
+public:
+    explicit PipelineWriteView(Storage &storage) : storage_(storage) {}
+    template<uint32_t P = 0, class... Args> void setnext(Args&&... args) {
+        storage_.template setnext<P>(std::forward<Args>(args)...);
+    }
+};
+template<class T, class Storage> class PipelineReadView {
+    Storage &storage_;
+public:
+    explicit PipelineReadView(Storage &storage) : storage_(storage) {}
+    const T& get() const { return storage_.get(); }
+    operator const T&() const { return storage_.get(); }
+    template<class U = T> auto operator[](uint32_t i) const -> decltype(std::declval<const U&>()[i]) { return storage_.get()[i]; }
+};
+template<class T, uint32_t Size, uint32_t Ports>
+class PipelineReadView<T, VulRegisterArray<T, Size, Ports>> {
+    VulRegisterArray<T, Size, Ports> &storage_;
+public:
+    explicit PipelineReadView(VulRegisterArray<T, Size, Ports> &storage) : storage_(storage) {}
+    const T& operator[](uint32_t i) const { return storage_[i]; }
 };
 
 } // namespace vulstorage

@@ -95,7 +95,11 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
     int unroll_limit,
     bool release,
     bool use_circt,
-    std::function<void(const std::string &)> progress_callback
+    std::function<void(const std::string &)> progress_callback,
+    int register_stages,
+    bool reset_enabled,
+    const std::map<std::string, std::vector<std::uint64_t>> &input_reset_values,
+    bool reset_probe
 ) {
     std::ifstream input(source_file);
     if (!input) {
@@ -122,6 +126,11 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
     options.top_function = top_function;
     options.rtl_module_body = true;
     options.use_circt = use_circt;
+    options.register_stages = register_stages;
+    options.reset_enabled = reset_enabled;
+    options.reset_name = "__vul_pipeline_rstn";
+    options.input_reset_values = input_reset_values;
+    options.clock_name = "__vul_pipeline_clk";
     options.rtl_port_bindings = port_bindings;
     options.unroll_limit = unroll_limit;
     options.clang_args.push_back("-std=c++20");
@@ -142,7 +151,7 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
         options.include_dirs.push_back(source_parent.string());
     }
 
-    auto result = rtlzz::compileToRtl(std::move(options));
+    auto result = reset_probe ? rtlzz::compileToBeir(std::move(options)) : rtlzz::compileToRtl(std::move(options));
     if (progress_line) progress_line->finish();
     RTLzzLogicRTLResult out;
     if (!result.ok()) {
@@ -160,8 +169,14 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
             output << '\n';
         }
     }
+    if (result.pipeline_report) out.output_reset_values = result.pipeline_report->output_reset_values;
     out.ok = true;
     out.rtl_text = output.str();
     out.debug_codelines = std::move(result.debug_codelines);
+    if (register_stages > 0 && result.pipeline_report) {
+        const auto &r = *result.pipeline_report;
+        out.debug_codelines.push_back("pipeline baseline_delay=" + std::to_string(r.baseline_delay) + " allowed_delay=" + std::to_string(r.allowed_delay) + " final_delay=" + std::to_string(r.final_delay) + " baseline_register_bits=" + std::to_string(r.baseline_register_bits) + " register_bits=" + std::to_string(r.register_bits) + "\n");
+        for (size_t i = 0; i < r.stage_delays.size(); ++i) out.debug_codelines.push_back("pipeline stage=" + std::to_string(i) + " delay=" + std::to_string(r.stage_delays[i]) + "\n");
+    }
     return out;
 }

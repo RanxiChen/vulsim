@@ -40,6 +40,7 @@ struct RegisterInfo {
 };
 
 string readRegisterExpr(const RegisterInfo &info, const string &rdata_expr) {
+    if (pipelineInput(info.reg->role)) throw VulException("Pipeline input is write-only outside PIPELINE: " + info.reg->name);
     if (info.reg->dims.empty()) {
         return info.helper_name + "()";
     }
@@ -200,6 +201,31 @@ string inlineRegisterReadsInExpr(
             continue;
         }
         const RegisterInfo &info = reg_it->second;
+        if (pipelineOutput(info.reg->role)) {
+            int end = i + 1;
+            while (end < static_cast<int>(tokens.size())) {
+                if (tokens[end].spelling == "[") {
+                    int close = findMatching(tokens, end, "[", "]");
+                    if (close < 0) break;
+                    end = close + 1;
+                } else if (tokens[end].spelling == "." && end + 1 < static_cast<int>(tokens.size())) {
+                    end += 2;
+                    if (end < static_cast<int>(tokens.size()) && tokens[end].spelling == "<") {
+                        int close = findMatching(tokens, end, "<", ">");
+                        if (close < 0) break;
+                        end = close + 1;
+                    }
+                    if (end < static_cast<int>(tokens.size()) && tokens[end].spelling == "(") {
+                        int close = findMatching(tokens, end, "(", ")");
+                        if (close < 0) break;
+                        end = close + 1;
+                    }
+                } else break;
+            }
+            const string op = end < static_cast<int>(tokens.size()) ? tokens[end].spelling : "";
+            if (op == "=" || op == "+=" || op == "-=" || op == "*=" || op == "/=" || op == "%=" || op == "&=" || op == "|=" || op == "^=" || op == "<<=" || op == ">>=" || op == "++" || op == "--" || (i > 0 && (tokens[i-1].spelling == "++" || tokens[i-1].spelling == "--")))
+                throw VulException("Pipeline output is read-only outside PIPELINE: " + info.reg->name);
+        }
 
         if (i + 2 < static_cast<int>(tokens.size()) && tokens[i + 1].spelling == "." && tokens[i + 2].spelling == "get") {
             int open_idx = i + 3;
@@ -292,9 +318,9 @@ InlineCode inlineRegisterAPIs(
     vector<Replacement> repls;
     string helper_defs;
     for (const auto &entry : registers) {
-        helper_defs += readRegisterHelper(entry.second);
-        helper_defs += registerWriteHelper(entry.second);
-        helper_defs += registerControlHelpers(entry.second);
+        if (!pipelineInput(entry.second.reg->role)) helper_defs += readRegisterHelper(entry.second);
+        if (!pipelineOutput(entry.second.reg->role)) helper_defs += registerWriteHelper(entry.second);
+        if (entry.second.reg->role == VulRegisterRole::Ordinary) helper_defs += registerControlHelpers(entry.second);
         helper_defs += "\n";
     }
     size_t logic_func_pos = findLogicSubmoduleFunctionStart(code);
@@ -315,6 +341,31 @@ InlineCode inlineRegisterAPIs(
             continue;
         }
         const RegisterInfo &info = reg_it->second;
+        if (pipelineOutput(info.reg->role)) {
+            int end = i + 1;
+            while (end < static_cast<int>(tokens.size())) {
+                if (tokens[end].spelling == "[") {
+                    int close = findMatching(tokens, end, "[", "]");
+                    if (close < 0) break;
+                    end = close + 1;
+                } else if (tokens[end].spelling == "." && end + 1 < static_cast<int>(tokens.size())) {
+                    end += 2;
+                    if (end < static_cast<int>(tokens.size()) && tokens[end].spelling == "<") {
+                        int close = findMatching(tokens, end, "<", ">");
+                        if (close < 0) break;
+                        end = close + 1;
+                    }
+                    if (end < static_cast<int>(tokens.size()) && tokens[end].spelling == "(") {
+                        int close = findMatching(tokens, end, "(", ")");
+                        if (close < 0) break;
+                        end = close + 1;
+                    }
+                } else break;
+            }
+            const string op = end < static_cast<int>(tokens.size()) ? tokens[end].spelling : "";
+            if (op == "=" || op == "+=" || op == "-=" || op == "*=" || op == "/=" || op == "%=" || op == "&=" || op == "|=" || op == "^=" || op == "<<=" || op == ">>=" || op == "++" || op == "--" || (i > 0 && (tokens[i-1].spelling == "++" || tokens[i-1].spelling == "--")))
+                throw VulException("Pipeline output is read-only outside PIPELINE: " + info.reg->name);
+        }
 
         if (i + 2 < static_cast<int>(tokens.size()) && tokens[i + 1].spelling == "." && tokens[i + 2].spelling == "get") {
             int open_idx = i + 3;
@@ -347,6 +398,8 @@ InlineCode inlineRegisterAPIs(
         }
         if (method_idx >= 0) {
             const string method_name = tokens[method_idx].spelling;
+            if (pipelineOutput(info.reg->role) || (info.reg->role != VulRegisterRole::Ordinary && method_name != "setnext"))
+                throw VulException("Forbidden pipeline register operation: " + info.reg->name + "." + method_name);
             string port_expr = "0";
             int open_idx = method_idx + 1;
             if (method_name == "setnext" && open_idx < static_cast<int>(tokens.size()) && tokens[open_idx].spelling == "<") {

@@ -48,6 +48,7 @@ void emitTracing(ModuleGenContext &ctx) {
             for (const auto &reg : mod.registers) {
                 if (reg.name == regname) {
                     is_reg_array = !reg.dims.empty();
+                    if (reg.role != VulRegisterRole::Ordinary) regname = "__vul_store_" + regname;
                     break;
                 }
             }

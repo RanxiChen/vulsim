@@ -24,11 +24,12 @@ void instantiateModule(
     const VulStaticBundleLib &global_bundles
 ) {
     auto reject_internal = [](const vector<string> &lines) {
-        const std::regex reserved(R"(\b__vul_(?:idx_|array_idx_)\w*)");
+        const std::regex reserved(R"(\b__vul_(?:idx_|array_idx_|store_|pipeline_)\w*)");
         for (const auto &line : cppparse::stripComments(lines).lines)
-            if (std::regex_search(line, reserved)) throw VulException("Internal array coordinate names are not a user API");
+            if (std::regex_search(line, reserved)) throw VulException("Internal generated names are not a user API");
     };
     reject_internal(temp.helper_codes);
+    for (const auto &pipe : temp.pipelines) reject_internal(pipe.codelines);
     for (const auto &reg : temp.registers) reject_internal(reg.reset_codelines);
     for (const auto &wire : temp.wires) reject_internal(wire.reset_codelines);
     for (const auto &block : temp.tick_blocks) reject_internal(block);

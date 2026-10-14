@@ -102,6 +102,7 @@ void checkModuleSymbols(
     for (const auto &[name, _] : module.services) declare_local(name, "SERVICE");
     for (const auto &[name, _] : module.queries) declare_local(name, "QUERY");
     for (const auto &reg : module.registers) declare_local(reg.name, "REGISTER");
+    for (const auto &pipe : module.pipelines) declare_local(pipe.name, "PIPELINE");
     for (const auto &wire : module.wires) declare_local(wire.name, "WIRE");
     for (const auto &bram : module.brams) declare_local(bram.name, "BRAM");
     for (const auto &rom : module.roms) declare_local(rom.name, "ROM");

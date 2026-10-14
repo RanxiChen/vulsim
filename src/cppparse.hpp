@@ -61,10 +61,13 @@ struct MacroEntry {
     LinePosition pos;
     std::string name;
     std::vector<std::string> args;
+    std::vector<LinePosition> arg_pos;
     bool has_body = false;
     std::vector<std::string> body;
     std::vector<LinePosition> body_pos;
 };
+
+MacroEntry parseMacroFragment(const std::string& text, LinePosition origin);
 
 std::vector<MacroEntry> findAllMacroEntries(const std::vector<std::string>& code);
 std::vector<MacroEntry> findAllMacroEntriesPreservingLinePositions(

@@ -18,6 +18,8 @@
 #include <vector>
 #include <utility>
 #include <functional>
+#include <map>
+#include <cstdint>
 
 struct RTLzzLogicRTLResult {
     bool ok = false;
@@ -27,6 +29,7 @@ struct RTLzzLogicRTLResult {
     std::vector<std::string> error_debug_codelines;
     std::string error_signal_debug_text;
     std::vector<std::string> error_signal_names;
+    std::map<std::string, std::vector<std::uint64_t>> output_reset_values;
 };
 
 RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
@@ -37,5 +40,9 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
     int unroll_limit = 1024,
     bool release = false,
     bool use_circt = false,
-    std::function<void(const std::string &)> progress_callback = {}
+    std::function<void(const std::string &)> progress_callback = {},
+    int register_stages = 0,
+    bool reset_enabled = false,
+    const std::map<std::string, std::vector<std::uint64_t>> &input_reset_values = {},
+    bool reset_probe = false
 );

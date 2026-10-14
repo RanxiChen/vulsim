@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "detail.hpp"
+#include <algorithm>
+#include <cctype>
+#include <unordered_set>
 
 namespace vulmodule::detail {
 
@@ -25,19 +28,57 @@ void staticalizeResources(InstantiationContext &ctx) {
         VulErrorContextGuard _err{"Processing register '" + reg.name + "'"};
         VulStaticRegister static_reg;
         static_reg.name = reg.name;
+        static_reg.role = reg.role;
+        static_reg.declaration_loc = reg.declaration_loc;
+        VulErrorContextGuard register_location{reg.declaration_loc.file + ":" + std::to_string(reg.declaration_loc.line)};
         static_reg.signature = parseTypeSignature(reg.type, local_config_lib);
         static_reg.ports = 1;
         if (!reg.portnum.empty()) {
             ConfigRealValue portnum_value = calculateConstexprValue(reg.portnum, local_config_lib);
             static_reg.ports = (portnum_value > 1) ? portnum_value : 1;
         }
+        if (reg.role != VulRegisterRole::Ordinary) {
+            const auto ports = reg.portnum.empty() ? 1 : calculateConstexprValue(reg.portnum, local_config_lib);
+            if (ports < 1 || ports >= 64 || (pipelineOutput(reg.role) && ports != 1))
+                throw VulException("Invalid pipeline register ports: " + reg.name);
+            if (!reg.dims.empty()) throw VulException("Pipeline register does not accept dims: " + reg.name);
+            // Follow value aliases, but do not reject arrays contained in a struct.
+            auto type = static_reg.signature.type;
+            std::unordered_set<string> visited;
+            while (visited.insert(type).second) {
+                string compact = type;
+                compact.erase(std::remove_if(compact.begin(), compact.end(), [](unsigned char c) { return std::isspace(c); }), compact.end());
+                if (compact.starts_with("std::array<") || compact.find('[') != string::npos)
+                    throw VulException("Pipeline register requires a non-array type: " + reg.name);
+                auto alias = std::find_if(ctx.local_config_library.begin(), ctx.local_config_library.end(), [&](const auto &bundle) { return bundle.name == type; });
+                if (alias == ctx.local_config_library.end() || !alias->is_alias || alias->members.empty()) break;
+                const auto &target = alias->members.front();
+                if (!target.dims.empty()) throw VulException("Pipeline register requires a non-array type: " + reg.name);
+                type = target.type.type;
+            }
+        }
         static_reg.reset_codelines = reg.reset_codelines;
         static_reg.reset_codelines_debug = reg.reset_codelines_debug;
         for (const auto &dim : reg.dims) {
             ConfigRealValue dim_value = calculateConstexprValue(dim, local_config_lib);
+            if (reg.role != VulRegisterRole::Ordinary && dim_value <= 0) throw VulException("Pipeline array dimension must be positive");
             static_reg.dims.push_back(dim_value);
         }
         instance.registers.push_back(std::move(static_reg));
+    }
+
+    for (const auto &pipe : temp.pipelines) {
+        VulStaticPipeline result;
+        result.name = pipe.name;
+        result.declaration_loc = pipe.declaration_loc;
+        VulErrorContextGuard pipeline_location{pipe.declaration_loc.file + ":" + std::to_string(pipe.declaration_loc.line)};
+        auto latency = calculateConstexprValue(pipe.latency, local_config_lib);
+        if (latency <= 0 || latency > 2147483647) throw VulException("PIPELINE latency must be a positive int: " + pipe.name);
+        result.latency = static_cast<int>(latency);
+        result.endpoints = pipe.endpoints;
+        result.codelines = pipe.codelines;
+        result.codelines_debug = pipe.codelines_debug;
+        instance.pipelines.push_back(std::move(result));
     }
 
     // wires

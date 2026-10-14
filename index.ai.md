@@ -61,7 +61,7 @@
 
 ## src/apiinline/register.cpp
 
-**文件功能**：实现 Register API 调用到 HLS 端口读写的 inline 替换。
+**文件功能**：实现 Register API 调用到 HLS 端口读写的 inline 替换。流水线输入只生成写接口，输出只生成读接口，拒绝访问另一侧及额外控制接口。
 
 **主要函数**
 - `inlineRegisterAPIs(...)`：扫描并替换寄存器读写 API。
@@ -208,16 +208,6 @@
 - `calculateConstexprValue(...)`：声明配置表达式求值入口。
 - `mergeStaticConfigLibs(...)`：声明配置库合并入口。
 
-## src/cppparse/
-
-**文件功能**：按源码处理、基础扫描和宏条目扫描拆分，公共声明保留在 `src/cppparse.hpp`。
-
-| 实现文件 | 主要函数与职责 |
-|---|---|
-| `source.cpp` | `readFileLines`、`stripComments`；保留注释处理与续行的原始行号映射。 |
-| `scanning.cpp` | `findNext`、`findNextBraceBlock`、`matchMacros`、`codeblockContainsFunctionCall`；轻量扫描。 |
-| `macro_entries.cpp` | `findAllMacroEntries`、`findAllMacroEntriesPreservingLinePositions`；处理嵌套参数、字面量、数字分隔符及宏体位置，词法辅助留在匿名命名空间。 |
-
 ## src/cppparse.hpp
 
 **文件功能**：声明轻量 C++/宏源码解析工具。
@@ -227,8 +217,19 @@
 - `LinePosition`：表示源码行列位置。
 - `MatchMacroResult`：表示一次宏匹配结果。
 - `BlockResult`：表示括号代码块范围。
-- `MacroEntry`：表示解析出的宏调用条目。
+- `MacroEntry`：表示解析出的宏调用条目，`arg_pos` 保存各参数起始位置，用于定位嵌套端点诊断。
+- `parseMacroFragment(...)`：声明无分号宏片段解析入口。
 - `findAllMacroEntries(...)`：声明宏扫描入口。
+
+## src/cppparse/
+
+**文件功能**：按源码处理、基础扫描和宏条目扫描拆分，公共声明保留在 `src/cppparse.hpp`。
+
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `source.cpp` | `readFileLines`、`stripComments`；保留注释处理与续行的原始行号映射。 |
+| `scanning.cpp` | `findNext`、`findNextBraceBlock`、`matchMacros`、`codeblockContainsFunctionCall`；轻量扫描。 |
+| `macro_entries.cpp` | `findAllMacroEntries`、`findAllMacroEntriesPreservingLinePositions`、`parseMacroFragment`；解析无分号的流水线嵌套端点，处理嵌套参数、字面量、数字分隔符及宏体位置，词法辅助留在匿名命名空间。 |
 
 ## src/debugmap.hpp
 
@@ -268,32 +269,6 @@
 - `materializeConcreteConnections(...)`：绑定源坐标并求值目标索引，展开多维边界通配与子事务维度到扁平事务索引，落实隐式子服务 REQUEST 的完整形状；分析、验证和两种生成器使用相同连接结果。
 - `concreteGenerationView(...)`：将具体子节点和连接转换为生成视图，不改变声明路径及坐标上下文。
 
-## src/port_shape.cpp / src/port_shape.h
-
-**文件功能**：共享多维事务形状与调用降低规则。
-
-- `portCoordinates(...)` / `portSubscript(...)` / `portIndexExpression(...)`：按最后一维变化最快转换坐标、参数访问和扁平编号。
-- `portArrayType(...)` / `portRequestFacade(...)`：构造嵌套数组类型，以及显式坐标／批量 REQUEST 接口；批量 ARG 取得值副本、RESP 保持引用、握手返回逐端口结果。
-- `portCallSlots(...)`：静态校验调用坐标或展开全部调用端点。
-- `lowerPortIndexDims(...)`：将 Service 的 `IDX_DIM` 降低为一致的坐标常量表达式。
-
-## src/module/
-
-**文件功能**：将临时模块静态化，分析事务调用并计算具体实例的更新顺序。公共数据模型与入口保留在 `src/module.h`。
-
-| 实现文件 | 主要函数与职责 |
-|---|---|
-| `instantiate.cpp` | `instantiateModule`；求值参数、配置和局部类型，按原顺序编排各静态化阶段。 |
-| `transactions.cpp` | `staticalizeReqServ`、`staticalizeTransactions`、`staticalizeTicks`；匹配 Service／QUERY 声明与实现，要求 QUERY 返回类型匹配且具有唯一实现；保留逻辑块编号与 priority。 |
-| `resources.cpp` | `staticalizeResources`；静态化 Register、Wire、Queue、BRAM、ROM。 |
-| `children.cpp` | `staticalizeChildren`；子实例维度与统一 PARAM 赋值，`PARAM(name)=COORD(dim)` 降低为坐标绑定。 |
-| `connections.cpp` | `staticalizeConnections`；连接索引解析、通配边界连接与子接口引出；QUERY 支持多通配，记录返回值外层形状与逐实例槽位。 |
-| `call_analysis.cpp` | `detectRequestCallInLogicBlocks`；`joinCode`、`transactionCallIndices`、`activeConstexprCode` 供调度阶段提取静态有效调用并保留诊断偏移。 |
-| `scheduling.cpp` | `setupUpdateSequence`；建立具体事务端点调用图，诊断调用环、重复调用、多更新源及更新约束环，将 priority 投影到公共祖先。 |
-| `detail.hpp` | `vulmodule::detail::InstantiationContext` 与内部阶段声明；共享目标实例、临时模块、配置／类型库和逻辑块编号。 |
-
-具体连接仍由 `materializeConcreteConnections` 展开；事务调用维度规则复用 `port_shape`。
-
 ## src/module.h
 
 **文件功能**：定义 VUL 模块、寄存器、请求、服务、队列、BRAM、子实例和静态实例层次的数据结构。
@@ -303,9 +278,37 @@
 - `VulStaticModuleInstance`：表示静态化后的模块实例。
 - `VulStaticReqServ`：表示静态 request/service 定义。
 - `VulStaticRegister`：表示静态寄存器定义。
+- `VulTempPipeline` / `VulStaticPipeline`：保存流水线名称、延迟、端点、函数体和源码位置。
+- `VulRegisterRole`：区分普通寄存器、流水线数据和 valid 的输入／输出归属。
 - `VulStaticQueue`：表示静态队列定义。
 - `instantiateModule(...)`：声明模块实例化入口。
 - `setupUpdateSequence(...)`：声明更新顺序构建入口。
+
+## src/module/
+
+**文件功能**：将临时模块静态化，分析事务调用并计算具体实例的更新顺序。公共数据模型与入口保留在 `src/module.h`。
+
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `instantiate.cpp` | `instantiateModule`；求值参数、配置和局部类型，按原顺序编排各静态化阶段；拒绝流水线函数及用户代码引用生成器保留的内部存储名称。 |
+| `transactions.cpp` | `staticalizeReqServ`、`staticalizeTransactions`、`staticalizeTicks`；匹配 Service／QUERY 声明与实现，要求 QUERY 返回类型匹配且具有唯一实现；保留逻辑块编号与 priority。 |
+| `resources.cpp` | `staticalizeResources`；静态化 Register、Wire、Queue、BRAM、ROM 及 PIPELINE；求值流水线延迟和输入端口数，沿类型别名检查端点必须为非数组类型，边界寄存器只登记一次。 |
+| `children.cpp` | `staticalizeChildren`；子实例维度与统一 PARAM 赋值，`PARAM(name)=COORD(dim)` 降低为坐标绑定。 |
+| `connections.cpp` | `staticalizeConnections`；连接索引解析、通配边界连接与子接口引出；QUERY 支持多通配，记录返回值外层形状与逐实例槽位。 |
+| `call_analysis.cpp` | `detectRequestCallInLogicBlocks`；`joinCode`、`transactionCallIndices`、`activeConstexprCode` 供调度阶段提取静态有效调用并保留诊断偏移。 |
+| `scheduling.cpp` | `setupUpdateSequence`；建立具体事务端点调用图，诊断调用环、重复调用、多更新源及更新约束环，将 priority 投影到公共祖先。 |
+| `detail.hpp` | `vulmodule::detail::InstantiationContext` 与内部阶段声明；共享目标实例、临时模块、配置／类型库和逻辑块编号。 |
+
+具体连接仍由 `materializeConcreteConnections` 展开；事务调用维度规则复用 `port_shape`。
+
+## src/port_shape.cpp / src/port_shape.h
+
+**文件功能**：共享多维事务形状与调用降低规则。
+
+- `portCoordinates(...)` / `portSubscript(...)` / `portIndexExpression(...)`：按最后一维变化最快转换坐标、参数访问和扁平编号。
+- `portArrayType(...)` / `portRequestFacade(...)`：构造嵌套数组类型，以及显式坐标／批量 REQUEST 接口；批量 ARG 取得值副本、RESP 保持引用、握手返回逐端口结果。
+- `portCallSlots(...)`：静态校验调用坐标或展开全部调用端点。
+- `lowerPortIndexDims(...)`：将 Service 的 `IDX_DIM` 降低为一致的坐标常量表达式。
 
 ## src/project.h
 
@@ -314,15 +317,28 @@
 **主要类型**
 - `VulStaticProject`：保存顶层模块、全局配置、全局 bundle、全局 helper 和测试模块。
 
+## src/rtlgen.h
+
+**文件功能**：声明 RTLGen 结果结构和 RTL 生成入口。
+
+**主要函数/类型**
+- `RTLGenResult`：保存 skeleton、logic、debug map、资源文件列表及多个流水线编译单元。
+- `PipelineRTLUnit`：保存独立流水线源码、端口布局、延迟和映射；`reset_source` / `reset_top` 用于求值输入初值。
+- `LogicRTLResult::output_reset_values`：按 OREG 名返回推导复位值，类型为 `map<string, vector<uint64_t>>`，低位 limb 在前，数组按逐元素布局拼接。
+- `LogicSubModuleName(...)`：生成逻辑子模块名称。
+- `genModuleRTL(...)`：声明唯一的 RTL skeleton/APIInline 生成入口。
+- `appendLogicRTL(...)`：声明调用 RTLZZ 追加 logic RTL 的入口。
+- `genVerilatorTestMainCpp(...)`：声明 Verilator 测试代码生成入口。
+
 ## src/rtlgen/
 
 **文件功能**：生成 RTL skeleton、经 API inline 的 HLS logic 和 Verilator 测试桥接。公共入口保留在 `src/rtlgen.h`。
 
 | 实现文件 | 主要函数与职责 |
 |---|---|
-| `module.cpp` | `genModuleRTL`；建立具体生成视图、编排处理阶段、组装输出和调试映射。 |
+| `module.cpp` | `genModuleRTL`；建立具体生成视图、编排处理阶段、组装输出和调试映射；为每个流水线构造独立 `PipelineRTLUnit`，复用类型打包布局。输出局部值不初始化，由 RTLZZ 检查完整定义；OVALID 直通在用户函数调用之后生成。 |
 | `declarations.cpp` | `_procConstAndBundle`、`_procWires`；常量、类型、helper 和 wire。 |
-| `registers.cpp` | `_procRegisters`；寄存器端口、RTL 实例、零初始化及用户复位块。 |
+| `registers.cpp` | `_procRegisters`；寄存器端口、RTL 实例、零初始化及用户复位块；流水线输入保留仲裁和复位，输出每周期采样，仅流水线驱动 D。输出复位字面量占位符由 RTLZZ 报告回填。 |
 | `transactions.cpp` | `_procRequests`、`_procServicesAndTicks`、`_procQueries`；事务端口、逻辑入口及 priority。 |
 | `connections.cpp` | `_procChildrenAndConnection`；子模块线网、Service／Query 引出与转发；通配 QUERY 生成非模板快照 helper，逐实例解包到返回数组。 |
 | `queues.cpp` | `_procQueues`；Queue／QueueMP 端口及 RTL 实例，计数输入使用硬件计数位宽。 |
@@ -333,23 +349,12 @@
 
 **顺序约束**：先收集事务／连接／资源逻辑并检查 Register API 使用情况，再处理寄存器；API inline 完成后插入寄存器复位计算。文件级全局端口与方向 pragma 的 ABI 保持一致。RTLZZ 接入仍由根目录的 `rtlgen_rtlzz.cpp` 和 `rtlzz_bridge.cpp` 实现。
 
-## src/rtlgen.h
-
-**文件功能**：声明 RTLGen 结果结构和 RTL 生成入口。
-
-**主要函数/类型**
-- `RTLGenResult`：保存 skeleton、logic、debug map 和资源文件列表。
-- `LogicSubModuleName(...)`：生成逻辑子模块名称。
-- `genModuleRTL(...)`：声明唯一的 RTL skeleton/APIInline 生成入口。
-- `appendLogicRTL(...)`：声明调用 RTLZZ 追加 logic RTL 的入口。
-- `genVerilatorTestMainCpp(...)`：声明 Verilator 测试代码生成入口。
-
 ## src/rtlgen_rtlzz.cpp
 
 **文件功能**：将 RTLGen 生成并经 APIInline 处理的 logic C++ 交给 RTLZZ 转换为 RTL并追加到 skeleton。
 
 **主要函数**
-- `appendLogicRTL(...)`：调用 RTLZZ 生成 logic RTL 并追加到 `RTLGenResult`。
+- `appendLogicRTL(...)`：调用 RTLZZ 生成普通 logic 和各独立流水线 RTL，将流水线嵌入命名 generate 作用域，回填边界输出复位字面量，并汇集报告。仅含流水线的模块也执行此步骤。
 - `appendTextAsLines(...)`：将 RTLZZ 输出文本追加为代码行。
 
 ## src/rtlzz_bridge.cpp
@@ -357,32 +362,14 @@
 **文件功能**：封装对 RTLZZ 编译接口的调用，并将其进度事件呈现为 stdout 上的单行动态状态。
 
 **主要函数**
-- `generateLogicRTLWithRTLzz(...)`：读取 logic C++，为 RTLZZ 安装带模块名的进度回调，以 `\r` 原地刷新当前阶段/优化轮次，结束或异常时收尾换行，并生成 SystemVerilog 文本。
+- `generateLogicRTLWithRTLzz(...)`：读取 logic C++，为 RTLZZ 安装带模块名的进度回调，以 `\r` 原地刷新当前阶段/优化轮次，结束或异常时收尾换行，并生成 SystemVerilog 文本。流水线使用原生后端，内部级数为 `latency−1`；先常量编译输入复位源，再根据划分后的 DAG 求值内部和输出复位值。
 
 ## src/rtlzz_bridge.hpp
 
-**文件功能**：声明 RTLZZ 桥接函数。
+**文件功能**：声明 RTLZZ 桥接函数、流水线配置和结果结构。`RTLzzLogicRTLResult` 包含 RTL、调试报告及输出复位值。
 
 **主要函数**
 - `generateLogicRTLWithRTLzz(...)`：声明 logic C++ 到 RTL 文本的转换入口。
-
-## src/simgen/
-
-**文件功能**：生成 C++ 仿真模块、工程头文件和测试 harness。公共入口与结果结构保留在 `src/simgen.h`。
-
-| 实现文件 | 主要函数与职责 |
-|---|---|
-| `common.cpp` | `genCurrentTimeString`、内部 `genHeaderPrelude` 与共享子实例命名辅助。 |
-| `headers.cpp` | `genStaticConfigHeaderCode`、`genStaticBundle`、`genStaticBundleHeaderCode`、`genStaticGlobalHelperHeaderCode`、`genStaticProjectHeaderCode`。 |
-| `module.cpp` | `genStaticModuleCodeHpp`；局部声明、Tick／helper、功能阶段编排及最终声明／实现组装。 |
-| `transactions.cpp` | `emitTransactions`；Request、Service、Query 包装及边界 Service 转发。 |
-| `resources.cpp` | `emitResources`；状态组件、复位值零初始化、用户复位、周期提交与资源清单。 |
-| `hierarchy.cpp` | `emitHierarchy`；具体子实例类型、坐标模板、请求连接与子接口引出；通配 QUERY 生成无参快照函数，以通配维度嵌套返回 std::array。 |
-| `tracing.cpp` | `emitTracing`；trace 注册、阵列坐标过滤和周期采样。 |
-| `harness.cpp` | `genStaticTestHarnessCodeHpp`、`genStaticTestHarnessHpp`、`genStaticTestMainHpp`；测试绑定、trace／断点集成及 main。 |
-| `detail.hpp` | `simgen::detail::ModuleGenContext`；持有完整具体生成视图、类名及各代码段／调试映射，生命周期覆盖所有阶段。 |
-
-RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成框架。
 
 ## src/simgen.h
 
@@ -394,6 +381,24 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 - `genStaticModuleCodeHpp(...)`：声明模块仿真代码生成入口。
 - `genStaticTestHarnessCodeHpp(...)`：声明测试 harness 代码生成入口。
 - `genStaticTestMainHpp(...)`：声明 main 代码生成入口。
+
+## src/simgen/
+
+**文件功能**：生成 C++ 仿真模块、工程头文件和测试 harness。公共入口与结果结构保留在 `src/simgen.h`。
+
+| 实现文件 | 主要函数与职责 |
+|---|---|
+| `common.cpp` | `genCurrentTimeString`、内部 `genHeaderPrelude` 与共享子实例命名辅助。 |
+| `headers.cpp` | `genStaticConfigHeaderCode`、`genStaticBundle`、`genStaticBundleHeaderCode`、`genStaticGlobalHelperHeaderCode`、`genStaticProjectHeaderCode`。 |
+| `module.cpp` | `genStaticModuleCodeHpp`；局部声明、Tick／helper、功能阶段编排及最终声明／实现组装；在模块自身执行节点调用隔离的流水线计算作用域，读取旧缓冲队尾，提交阶段推进 `latency−1` 级数据和 valid 缓冲。输入全部复位后执行一次组合函数，设置输出复位值并填满所有缓冲；构造和再次复位均执行，无需填充计数或 valid 门控。 |
+| `transactions.cpp` | `emitTransactions`；Request、Service、Query 包装及边界 Service 转发。 |
+| `resources.cpp` | `emitResources`；状态组件、复位值零初始化、用户复位、周期提交与资源清单；为流水线端点声明独立底层存储和半寄存器包装，输入加入常规复位，输出复位交由流水线计算函数设置。 |
+| `hierarchy.cpp` | `emitHierarchy`；具体子实例类型、坐标模板、请求连接与子接口引出；通配 QUERY 生成无参快照函数，以通配维度嵌套返回 std::array。 |
+| `tracing.cpp` | `emitTracing`；trace 注册、阵列坐标过滤和周期采样；流水线端点直接追踪底层存储，避免向用户开放输入读接口。 |
+| `harness.cpp` | `genStaticTestHarnessCodeHpp`、`genStaticTestHarnessHpp`、`genStaticTestMainHpp`；测试绑定、trace／断点集成及 main。 |
+| `detail.hpp` | `simgen::detail::ModuleGenContext`；持有完整具体生成视图、类名及各代码段／调试映射，生命周期覆盖所有阶段。 |
+
+RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成框架。
 
 ## src/stringop.hpp
 
@@ -460,6 +465,10 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 - `identifierReplace(...)`：声明标识符替换工具。
 - `isBasicVulType(...)`：声明基础类型判断工具。
 
+## src/validate.cpp
+
+**文件功能**：校验模块和全局符号、接口与连接；流水线名称和端点参加模块级重名及全局名称冲突检查。
+
 ## src/vcpp.cpp
 
 **文件功能**：保留工程解析公共入口。
@@ -474,21 +483,24 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 **主要函数**
 - `parseVcppStaticProject(...)`：从工程目录、顶层模块和测试文件解析静态工程。
 
-## src/vullib.hpp
+## src/vulcpp/common.cpp / common.hpp
 
-**文件功能**：定义生成输出时需要复制的 VUL runtime 文件清单。
-
-**主要函数/类型**
-- `getVulLibFiles()`：返回 runtime 头文件和资源文件列表。
+**文件功能**：声明解析共享工具；识别顶层赋值、右侧 COORD 标记及方括号维度列表。
 
 ## src/vulcpp/declaration_args.cpp / declaration_args.hpp
 
 **文件功能**：声明 API 的共享参数规格与归一化入口。
 
 - `normalizeDeclaration(...)`：统一名称／类型／属性的固定顺序及显式命名，拒绝重复参数、位置／命名混用错误、旧宏和同义属性；输出处理器所需的位置前缀与命名属性，保留隐式握手和原始源码位置。
+- 规范化 PIPELINE 必需的 name/latency 属性；嵌套端点由 `module_handlers.cpp` 解析后复用声明属性规则。
+- `PARAM(name)=COORD(dim)` 按参数名去重，使普通赋值与坐标绑定互斥。
 - 全局 header、模块、版本化接口／实现、测试入口与 TOP／PROJECT 路径扫描共享该入口；`common.cpp` 负责顶层赋值识别与方括号维度列表校验。
 - 用户语法以 `doc/userguide/0-declarations.md` 为参数表；`vullib/defhelper.hpp` 仅覆盖基础位置写法的编辑期类型辅助。
 - `regression/declaration_api.py` 验证参数语法、移除诊断及 C++20 编辑期声明；`regression/generator_declaration_api.py` 验证完整生成流程。
+
+## src/vulcpp/module_handlers.cpp / module_handlers.hpp
+
+**文件功能**：处理模块声明，将坐标 PARAM 降低为坐标绑定模型。检查 PIPELINE 端点种类、用户复位块限制、valid 配对和模块级名称唯一性；IREG／OREG 禁止 dims，OREG 禁止 ports；仅允许在模块实现及选定 VERSION 声明流水线。
 
 ## src/vulcpp/project_parser.cpp
 
@@ -496,8 +508,13 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 
 - `parseVcppStaticProjectImpl(...)`：解析工程并逐坐标展开具体实例，落实 `PARAM(name)=COORD(dim)` 坐标绑定和普通参数覆盖，保留声明路径用于共享模板文件；构建用于更新顺序分析的 TestMain；子 Request 驱动的顶层内部 Service 不添加虚构的外部调用源。
 
-## QUERY 声明与快照回归
+## src/vullib.hpp
 
-`regression/generator_query_api.py` 覆盖 INTERFACE 必需声明、返回类型匹配与缺失／重复实现；验证 simgen 与 RTL/API inline 中多维、部分通配、数组返回嵌套、结构体、枚举、宽 Int、复位与快照值副本。QUERY 本身始终是普通无参函数，阵列只属于通配引出返回值。
+**文件功能**：定义生成输出时需要复制的 VUL runtime 文件清单。
 
-坐标绑定语法统一为 `PARAM(name)=COORD(dim)`；`declaration_args` 按参数名去重，使普通赋值与坐标绑定互斥，`common` 识别右侧 COORD 标记，`module_handlers` 将其降低为已有坐标绑定模型。
+**主要函数/类型**
+- `getVulLibFiles()`：返回 runtime 头文件和资源文件列表。
+
+## tools/vulrtlgen.cpp
+
+**文件功能**：RTL 生成命令行入口；实现去重签名包含流水线端点、延迟、源码与复位配置，保存各独立编译单元的调试产物，release 清理覆盖全部产物。

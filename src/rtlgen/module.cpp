@@ -16,6 +16,7 @@
 #include "common.hpp"
 #include "instance_graph.h"
 #include "apiinline/apiinline.hpp"
+#include "apiinline/utils.hpp"
 #include "debugmap.hpp"
 #include <algorithm>
 #include <cctype>
@@ -237,6 +238,101 @@ RTLGenResult genModuleRTL(
         hls.push_back("}\n");
         hls.push_back("\n");
         vulDebugNormalize(result.logic_hls_codes, result.logic_hls_debug);
+    }
+
+    for (const auto &pipe : module.pipelines) {
+        PipelineRTLUnit unit;
+        unit.name = pipe.name;
+        unit.declaration_loc = pipe.declaration_loc;
+        unit.latency = pipe.latency;
+        unit.top_function = logic_module_name + "_pipeline_" + pipe.name;
+        auto &source = unit.source;
+        source = {"#include <array>\n", "#include <cstdint>\n", "#include <type_traits>\n", "#include <fixint.hpp>\n", "using std::array;\n",
+                  "using int8 = int8_t; using uint8 = uint8_t; using int16 = int16_t; using uint16 = uint16_t; using int32 = int32_t; using uint32 = uint32_t; using int64 = int64_t; using uint64 = uint64_t;\n"};
+        vulDebugAppendLines(source, unit.debug, ctx.hls_header, ctx.hls_header_debug);
+        unit.reset_source = source;
+        unit.reset_top = unit.top_function + "_reset_inputs";
+        vector<string> reset_body;
+        string signature = "void __vul_compute(";
+        string arguments;
+        string iv, ov;
+        vector<string> body, pack;
+        for (const auto &name : pipe.endpoints) {
+            const auto it = std::find_if(module.registers.begin(), module.registers.end(), [&](const auto &r) { return r.name == name; });
+            const auto &reg = *it;
+            uint32_t width = 0;
+            vector<FlatField> fields;
+            flatten_type_signature(reg.signature, local_bundlelib, "value", width, fields);
+            const bool input = pipelineInput(reg.role);
+            string type = reg.signature.toString();
+            string port_type = "Int<" + std::to_string(width) + ">";
+            if (!reg.dims.empty()) {
+                type = "std::array<" + type + ", " + std::to_string(reg.dims[0]) + ">";
+                port_type = "std::array<" + port_type + ", " + std::to_string(reg.dims[0]) + ">";
+            }
+            const bool valid = reg.role == VulRegisterRole::InputValid || reg.role == VulRegisterRole::OutputValid;
+            if (valid) port_type = "bool";
+            const string port = "__vul_port_" + name;
+            source.push_back("#pragma " + string(input ? "input_port " : "output_port ") + port + "\n");
+            source.push_back(port_type + " " + port + ";\n");
+            if (input) {
+                unit.reset_source.push_back("#pragma output_port " + port + "\n" + port_type + " " + port + ";\n");
+                reset_body.push_back("{\n" + type + " " + name + "{};\n");
+                for (const auto &line : reg.reset_codelines) reset_body.push_back(line + "\n");
+                int count = reg.dims.empty() ? 1 : static_cast<int>(reg.dims[0]);
+                for (int i=0; i<count; ++i) {
+                    const string suffix = reg.dims.empty() ? "" : "[" + std::to_string(i) + "]";
+                    if (valid) reset_body.push_back(port + " = " + name + ";\n");
+                    else {
+                        reset_body.push_back(port + suffix + " = 0;\n");
+                        for (const auto &field : fields) reset_body.push_back(uintExtractExpr(port + suffix, field.offset + field.width-1, field.offset) + " = " + packFlatFieldExpr(field, flatFieldValueExpr(name + suffix, field.name)) + ";\n");
+                    }
+                }
+                reset_body.push_back("}\n");
+            } else unit.output_shapes[name] = {width, reg.dims.empty() ? 1 : static_cast<int>(reg.dims[0])};
+            unit.bindings.emplace_back(port, input ? "__vul_pipeline_q_" + name : "__vul_pipeline_d_" + name);
+            const string value = "__vul_value_" + name;
+            // No syntactic initializer on outputs: RTLZZ tracks their undefined leaves.
+            body.push_back(type + " " + value + (input ? "{}" : "") + ";\n");
+            int count = reg.dims.empty() ? 1 : static_cast<int>(reg.dims[0]);
+            if (valid) {
+                if (input) body.push_back(value + " = " + port + ";\n");
+                else pack.push_back(port + " = " + value + ";\n");
+            }
+            for (int i = 0; !valid && i < count; ++i) {
+                const string suffix = reg.dims.empty() ? "" : "[" + std::to_string(i) + "]";
+                if (!input) pack.push_back(port + suffix + " = 0;\n");
+                for (const auto &field : fields) {
+                    const string access = flatFieldValueExpr(value + suffix, field.name);
+                    const string bits = uintExtractExpr(port + suffix, field.offset + field.width - 1, field.offset);
+                    if (input) body.push_back(access + " = " + apiinline::unpackFlatFieldValueExpr(access, bits, field) + ";\n");
+                    else pack.push_back(bits + " = " + packFlatFieldExpr(field, access) + ";\n");
+                }
+            }
+            if (reg.role == VulRegisterRole::OutputValid) { ov = value; continue; }
+            if (reg.role == VulRegisterRole::InputValid) iv = value;
+            if (!arguments.empty()) { arguments += ", "; signature += ", "; }
+            signature += (input ? "const " : "") + type + " &" + name;
+            arguments += value;
+        }
+        source.push_back(signature + ") {\n");
+        vulDebugAppendLines(source, unit.debug, pipe.codelines, pipe.codelines_debug);
+        source.push_back("}\n");
+        source.push_back("void " + unit.top_function + "() {\n");
+        source.insert(source.end(), body.begin(), body.end());
+        source.push_back("__vul_compute(" + arguments + ");\n");
+        if (!ov.empty()) source.push_back(ov + " = " + iv + ";\n");
+        source.insert(source.end(), pack.begin(), pack.end());
+        source.push_back("}\n");
+        unit.reset_source.push_back("void " + unit.reset_top + "() {\n");
+        unit.reset_source.insert(unit.reset_source.end(), reset_body.begin(), reset_body.end());
+        unit.reset_source.push_back("}\n");
+        for (auto &line : unit.reset_source) if (line.empty() || line.back() != '\n') line.push_back('\n');
+        unit.bindings.emplace_back("__vul_pipeline_rstn", "rstn");
+        unit.bindings.emplace_back("__vul_pipeline_clk", "clk");
+        for (auto &line : source) if (line.empty() || line.back() != '\n') line.push_back('\n');
+        vulDebugNormalize(source, unit.debug);
+        result.pipelines.push_back(std::move(unit));
     }
 
     auto &rtl = result.rtl_skeleten_codes;

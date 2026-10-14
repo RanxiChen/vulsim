@@ -14,6 +14,7 @@
 
 #include "detail.hpp"
 #include "debugmap.hpp"
+#include <algorithm>
 
 namespace simgen {
 using namespace detail;
@@ -59,6 +60,71 @@ void emitTicksAndHelpers(ModuleGenContext &ctx) {
         vulDebugAppendLines(impl_field, impl_field_debug, tick.codelines, tick.codelines_debug);
         impl_field.push_back("}\n");
         impl_field.push_back("\n");
+    }
+
+    for (const auto &pipe : mod.pipelines) {
+        const string prefix = "__vul_pipeline_" + pipe.name;
+        decl_private_field.push_back("struct " + prefix + "_scope {\n");
+        vulDebugAppendLines(decl_private_field, decl_private_field_debug, mod.helper_codes, mod.helper_codes_debug);
+        string signature = "void compute(";
+        string arguments;
+        string iv, ov;
+        vector<const VulStaticRegister*> outputs;
+        for (const auto &name : pipe.endpoints) {
+            const auto it = std::find_if(mod.registers.begin(), mod.registers.end(), [&](const auto &r) { return r.name == name; });
+            const auto &reg = *it;
+            string type = reg.signature.toString();
+            if (!reg.dims.empty()) type = "std::array<" + type + ", " + std::to_string(reg.dims[0]) + ">";
+            if (reg.role == VulRegisterRole::OutputValid) { ov = name; outputs.push_back(&reg); continue; }
+            if (!arguments.empty()) { arguments += ", "; signature += ", "; }
+            signature += (pipelineInput(reg.role) ? "const " : "") + type + " &" + name;
+            if (pipelineInput(reg.role)) {
+                if (reg.dims.empty()) arguments += "__vul_store_" + name + ".get()";
+                else {
+                    string expression = type + "{";
+                    for (int i = 0; i < reg.dims[0]; ++i) { if (i) expression += ", "; expression += "__vul_store_" + name + "[" + std::to_string(i) + "]"; }
+                    arguments += expression + "}";
+                }
+                if (reg.role == VulRegisterRole::InputValid) iv = name;
+            } else { arguments += prefix + "_result_" + name; outputs.push_back(&reg); }
+        }
+        decl_private_field.push_back(signature + ") {\n");
+        vulDebugAppendLines(decl_private_field, decl_private_field_debug, pipe.codelines, pipe.codelines_debug);
+        decl_private_field.push_back("}\n};\n");
+        for (const auto *reg : outputs) {
+            const string name = reg->name;
+            string type = reg->signature.toString();
+            if (!reg->dims.empty()) type = "std::array<" + type + ", " + std::to_string(reg->dims[0]) + ">";
+            const string value = prefix + "_result_" + name;
+            decl_private_field.push_back(type + " " + value + "{};\n");
+            if (pipe.latency > 1) decl_private_field.push_back("std::array<" + type + ", " + std::to_string(pipe.latency - 1) + "> " + prefix + "_buffer_" + name + "{};\n");
+        }
+        decl_private_field.push_back("void " + prefix + "_execute() {\n" + prefix + "_scope{}.compute(" + arguments + ");\n");
+        if (!ov.empty()) decl_private_field.push_back(prefix + "_result_" + ov + " = __vul_store_" + iv + ".get();\n");
+        for (const auto *reg : outputs) {
+            const string name = reg->name;
+            const string value = pipe.latency == 1 ? prefix + "_result_" + name : prefix + "_buffer_" + name + "[" + std::to_string(pipe.latency - 2) + "]";
+            if (reg->dims.empty()) decl_private_field.push_back("__vul_store_" + name + ".setnext(" + value + ");\n");
+            else for (int i = 0; i < reg->dims[0]; ++i) decl_private_field.push_back("__vul_store_" + name + ".setnext(" + std::to_string(i) + ", " + value + "[" + std::to_string(i) + "]);\n");
+            if (pipe.latency > 1) {
+                const string buffer = prefix + "_buffer_" + name;
+                ctx.impl_commit_field.push_back("for (int i = " + std::to_string(pipe.latency - 2) + "; i > 0; --i) " + buffer + "[i] = " + buffer + "[i-1];\n");
+                ctx.impl_commit_field.push_back(buffer + "[0] = " + prefix + "_result_" + name + ";\n");
+            }
+        }
+        decl_private_field.push_back("}\n");
+        decl_private_field.push_back("void " + prefix + "_reset() {\n");
+        for (const auto *reg : outputs) decl_private_field.push_back(prefix + "_result_" + reg->name + " = {};\n");
+        decl_private_field.push_back(prefix + "_scope{}.compute(" + arguments + ");\n");
+        if (!ov.empty()) decl_private_field.push_back(prefix + "_result_" + ov + " = __vul_store_" + iv + ".get();\n");
+        for (const auto *reg : outputs) {
+            const string value = prefix + "_result_" + reg->name;
+            const string storage = "__vul_store_" + reg->name;
+            decl_private_field.push_back(storage + "._set_reset_value(" + value + ");\n" + storage + "._reset();\n");
+            if (pipe.latency > 1) decl_private_field.push_back("for (auto &stage : " + prefix + "_buffer_" + reg->name + ") stage = " + value + ";\n");
+        }
+        decl_private_field.push_back("}\n");
+        ctx.impl_reg_reset_field.push_back(prefix + "_reset();\n");
     }
 
     // helper field
@@ -186,6 +252,7 @@ StaticModuleCodeHpp genStaticModuleCodeHpp(const VulStaticModuleInstance &origin
     impl.push_back("void " + mod_class_name + "::" + TickFunctionName + "() {\n");
     for (const auto &id : mod.update_seq) {
         if (id == mod.instance_id) {
+            for (const auto &pipe : mod.pipelines) impl.push_back(CodeTab + "__vul_pipeline_" + pipe.name + "_execute();\n");
             // tick functions here
             for (uint64_t i = 0; i < mod.tick_blocks.size(); i++) {
                 impl.push_back(CodeTab + "__tick" + std::to_string(i) + "();\n");

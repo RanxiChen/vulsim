@@ -38,6 +38,11 @@ const std::map<string, Spec> specs = {
     {"STRUCT", {{"name"}, 1, {"name"}}},
     {"ENUM", {{"name"}, 1, {"name"}}},
     {"ALIAS", {{"name", "type", "dims"}, 2, {"name", "type"}}},
+    {"PIPELINE_ATTR", {{"name", "latency"}, 2, {"name", "latency"}}},
+    {"IREG", {{"name", "type", "ports"}, 2, {"name", "type"}}},
+    {"OREG", {{"name", "type"}, 2, {"name", "type"}}},
+    {"IVALID", {{"name", "ports"}, 1, {"name"}}},
+    {"OVALID", {{"name"}, 1, {"name"}}},
     {"REGISTER", {{"name", "type", "ports", "dims"}, 2, {"name", "type"}}},
     {"WIRE", {{"name", "type"}, 2, {"name", "type"}}},
     {"REQUEST", {{"name", "handshake", "dims"}, 1, {"name"}, true}},
@@ -83,11 +88,34 @@ const std::map<string, string> removed = {
 }
 
 MacroEntry normalizeDeclaration(const MacroEntry &entry, const string &location) {
+    if (entry.name == "PIPELINE") {
+        MacroEntry attributes = entry;
+
+        size_t count = 0;
+        while (count < entry.args.size()) {
+            auto a = trim(entry.args[count]);
+            const auto open = a.find('(');
+            const string kind = trim(a.substr(0, open));
+            if (kind == "IREG" || kind == "OREG" || kind == "IVALID" || kind == "OVALID") break;
+            ++count;
+        }
+        // Normalize fixed attributes independently of the nested declaration tail.
+        attributes.args.resize(count);
+        attributes.name = "PIPELINE_ATTR";
+        auto normalized = normalizeDeclaration(attributes, location);
+        normalized.name = "PIPELINE";
+        normalized.arg_pos.assign(normalized.args.size(), entry.pos);
+        for (size_t i = count; i < entry.args.size(); ++i) {
+            normalized.args.push_back(entry.args[i]);
+            normalized.arg_pos.push_back(i < entry.arg_pos.size() ? entry.arg_pos[i] : entry.pos);
+        }
+        return normalized;
+    }
     auto fail = [&](const string &message) -> void {
         const string position = location.empty()
             ? "line " + std::to_string(entry.pos.line + 1) + ", column " + std::to_string(entry.pos.column + 1)
             : location;
-        throw VulException(entry.name + " " + message + " at " + position);
+        throw VulException((entry.name == "PIPELINE_ATTR" ? string("PIPELINE") : entry.name) + " " + message + " at " + position);
     };
     if (auto old = removed.find(entry.name); old != removed.end())
         fail("has been removed; use " + old->second);

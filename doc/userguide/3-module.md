@@ -649,3 +649,39 @@ QUEUE(q, uint32_t, 8, enq_width=3, deq_width=2);
 ```
 
 普通队列默认单 enq / 单 deq。显式设置 `enq_width` 或 `deq_width` 大于 1 时表示多端口队列。
+
+## 流水线块 PIPELINE
+
+`PIPELINE` 在模块实现或选定的 VERSION 中声明一个持续运行的计算流水线。其函数体只能访问输入参数、输出参数、类型、配置常量以及 header／HELPER 中的帮助函数，不能访问其他 VUL 组件或调用外部事务。
+
+```cpp
+PIPELINE(name=example, latency=3,
+    IREG(name=source, type=Int<32>, ports=2) { source=1; },
+    IVALID(name=source_valid, ports=2),
+    OREG(name=result, type=Int<32>),
+    OVALID(name=result_valid)
+) {
+    result = source + Int<32>(1);
+}
+```
+
+`name, latency` 是必需属性，端点声明放在属性之后并以逗号分隔。latency 可使用 CONFIG、PARAMETER 常量，必须大于零。端点名称属于模块平铺命名空间：普通模块逻辑使用 `source.setnext<P>(value)`、`source_valid.setnext<P>(bool)` 写入输入，使用 `result.get()`、隐式转换、对应类型的只读索引读取输出。输入不提供读取接口，输出不提供写入或 hold/reset 控制接口。
+
+IREG 接受 name、type、ports 和可选复位块。OREG 仅接受 name、type，禁止 ports 和复位块。两者都禁止 dims（包括空列表），且类型必须是非数组类型，不能通过 ALIAS 绕过；允许结构体类型含有数组字段。OREG 的内部写端口固定为一个。
+
+IVALID／OVALID 可同时省略；出现任一声明时，必须各声明且仅声明一个。它们固定为 bool 标量，不接受类型、维度或初始化块。IVALID 可设置 ports，沿用输入寄存器的仲裁规则；OVALID 只接受 name。
+
+内部 IREG 等价于 const 值参数，OREG 等价于可写引用参数，可以先赋值后读取。IVALID 是可读的 const bool 参数，OVALID 不在函数体作用域内。生成器在函数调用之后自动添加 `ovalid=ivalid` 通路，它与数据具有相同延迟。rtlgen 要求所有执行路径完整定义 OREG；不能仅在 valid 为 true 时赋值。simgen 不检查输出完整定义，也不检查可综合性。
+
+### 周期计数与有效位
+
+若输入寄存器的值在边沿 k 生效，计算结果和对应 valid 在边沿 k+latency 生效于输出寄存器。调用 setnext 本身尚未让输入值生效，必须从提交输入的边沿开始计数。
+
+父项目生成两侧寄存器，RTLZZ 插入 latency−1 级内部寄存器。因此 latency=1 是两侧寄存器之间的组合计算。simgen 每周期完成整个函数计算，再通过 latency−1 级值缓冲模拟相同延迟。
+
+流水线每周期推进，没有暂停或握手。valid 是普通的延迟数据，不是时钟使能：无效输入仍计算并更新输出，只是对应 OVALID 为 false。未写入的 IREG 和 IVALID 保持原值；IVALID 不会自动清零，需要发送单周期脉冲时应在下一周期明确写入 false。
+
+### 初始化与复位
+
+IREG 遵循声明复位值，IVALID 初始化及复位为 false。OREG 禁止用户复位块，其复位值自动由整组输入复位值运行组合函数得到；OVALID 复位为 false。复位期间，输出和内部状态保持这些推导值，复位会清除在途事务，无需填充计数器或输出屏蔽。
+

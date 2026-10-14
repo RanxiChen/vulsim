@@ -31,6 +31,7 @@ void emitResources(ModuleGenContext &ctx) {
     auto &bram_resources_files = ctx.bram_resources_files;
     // generate register
     for (const auto &reg : mod.registers) {
+        const string storage = reg.role == VulRegisterRole::Ordinary ? reg.name : "__vul_store_" + reg.name;
         const auto &sig = reg.signature;
         string type_str;
         string base_type = sig.type;
@@ -47,7 +48,7 @@ void emitResources(ModuleGenContext &ctx) {
             }
             type_str += ">";
 
-            decl_private_field.push_back(type_str + " " + reg.name + ";\n");
+            decl_private_field.push_back(type_str + " " + storage + ";\n");
             // decl_private_field.push_back("template <uint32_t P = 0>\n");
             // decl_private_field.push_back("void " + reg.name + "_setnext(const uint64_t idx, const " + base_type + " &value) {\n");
             // decl_private_field.push_back(CodeTab + reg.name + ".setnext<P>(idx, value);\n");
@@ -60,7 +61,7 @@ void emitResources(ModuleGenContext &ctx) {
                 type_str = RegisterClassName + "<" + base_type + ">";
             }
 
-            decl_private_field.push_back(type_str + " " + reg.name + ";\n");
+            decl_private_field.push_back(type_str + " " + storage + ";\n");
             // decl_private_field.push_back("template <uint32_t P = 0>\n");
             // decl_private_field.push_back("void " + reg.name + "_setnext(const " + base_type + " &value) {\n");
             // decl_private_field.push_back(CodeTab + reg.name + ".setnext<P>(value);\n");
@@ -69,6 +70,14 @@ void emitResources(ModuleGenContext &ctx) {
             // decl_private_field.push_back(CodeTab + "return " + reg.name + ".get();\n");
             // decl_private_field.push_back("}\n");
             decl_private_field.push_back("\n");
+        }
+        if (reg.role != VulRegisterRole::Ordinary) {
+            string view = pipelineInput(reg.role) ? "vulstorage::PipelineWriteView<" + type_str + ">" : "vulstorage::PipelineReadView<" + base_type + ", " + type_str + ">";
+            decl_private_field.push_back(view + " " + reg.name + "{" + storage + "};\n");
+        }
+        if (pipelineOutput(reg.role)) {
+            impl_commit_field.push_back(storage + "." + ApplyTickFunctionName + "();\n");
+            continue;
         }
         VulStaticBundleMember sig_as_member;
         sig_as_member.name = reg.name;
@@ -79,12 +88,12 @@ void emitResources(ModuleGenContext &ctx) {
                            _genStaticMemberTypeStr(sig_as_member) + " " + reg.name + "{};\n");
         vulDebugAppendLines(impl_reg_reset_value_field, impl_reg_reset_value_field_debug, reg.reset_codelines, reg.reset_codelines_debug);
         vulDebugAppendLine(impl_reg_reset_value_field, impl_reg_reset_value_field_debug,
-                           "this->" + reg.name + "._set_reset_value(" + reg.name + ");\n");
+                           "this->" + storage + "._set_reset_value(" + reg.name + ");\n");
         vulDebugAppendLine(impl_reg_reset_value_field, impl_reg_reset_value_field_debug, "}\n");
 
-        impl_reg_reset_field.push_back("this->" + reg.name + "._reset();\n");
+        impl_reg_reset_field.push_back("this->" + storage + "._reset();\n");
 
-        impl_commit_field.push_back(reg.name + "." + ApplyTickFunctionName + "();\n");
+        impl_commit_field.push_back(storage + "." + ApplyTickFunctionName + "();\n");
     }
 
     // generate wire

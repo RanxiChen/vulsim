@@ -480,7 +480,7 @@ SplitBodyLinesWithPosResult splitBodyLinesWithPos(
     return out;
 }
 
-std::vector<MacroEntry> findAllMacroEntriesFromFlatCode(const FlatCode &flat) {
+std::vector<MacroEntry> findAllMacroEntriesFromFlatCode(const FlatCode &flat, bool fragment = false) {
 
     const std::string& s = flat.text;
     const std::vector<LinePosition>& pos = flat.pos;
@@ -536,6 +536,13 @@ std::vector<MacroEntry> findAllMacroEntriesFromFlatCode(const FlatCode &flat) {
         MacroEntry entry;
         entry.pos = entryPos;
         entry.name = std::move(name);
+        size_t cursor = argOpen + 1;
+        for (const auto &arg : args) {
+            auto start = s.find(arg, cursor);
+            if (start == std::string::npos || start > argClose) start = cursor;
+            entry.arg_pos.push_back(pos[start]);
+            cursor = start + arg.size();
+        }
         entry.args = std::move(args);
 
         if (p < s.size() && s[p] == '{') {
@@ -552,6 +559,8 @@ std::vector<MacroEntry> findAllMacroEntriesFromFlatCode(const FlatCode &flat) {
             entry.body.clear();
             entry.body_pos.clear();
             ++p;
+        } else if (fragment && p == s.size()) {
+            entry.has_body = false;
         } else {
             throw VulException(
                 "expected '{' or ';' after macro entry '" +
@@ -566,6 +575,20 @@ std::vector<MacroEntry> findAllMacroEntriesFromFlatCode(const FlatCode &flat) {
 }
 
 } // namespace
+
+MacroEntry parseMacroFragment(const std::string &text, LinePosition origin) {
+    FlatCode flat;
+    flat.text = text;
+    auto position = origin;
+    for (char c : text) {
+        flat.pos.push_back(position);
+        if (c == '\n') { ++position.line; position.column = 0; }
+        else ++position.column;
+    }
+    auto entries = findAllMacroEntriesFromFlatCode(flat, true);
+    if (entries.size() != 1) throw VulException("Expected exactly one pipeline endpoint");
+    return entries.front();
+}
 
 std::vector<MacroEntry> findAllMacroEntries(const std::vector<std::string>& code) {
     return findAllMacroEntriesFromFlatCode(flattenCodeWithoutPreprocessorLines(code));

@@ -126,7 +126,27 @@ inline bool operator==(const VulReqServConnection &a, const VulReqServConnection
 }
 
 
+enum class VulRegisterRole { Ordinary, Input, Output, InputValid, OutputValid };
+inline bool pipelineInput(VulRegisterRole r) { return r == VulRegisterRole::Input || r == VulRegisterRole::InputValid; }
+inline bool pipelineOutput(VulRegisterRole r) { return r == VulRegisterRole::Output || r == VulRegisterRole::OutputValid; }
+
+struct VulTempPipeline {
+    string name, latency;
+    VulDebugLoc declaration_loc;
+    vector<string> endpoints, codelines;
+    VulDebugLocs codelines_debug;
+};
+struct VulStaticPipeline {
+    string name;
+    int latency = 1;
+    VulDebugLoc declaration_loc;
+    vector<string> endpoints, codelines;
+    VulDebugLocs codelines_debug;
+};
+
 struct VulTempRegister {
+    VulRegisterRole role = VulRegisterRole::Ordinary;
+    VulDebugLoc declaration_loc;
     string name;
     string type;
     string portnum;
@@ -300,6 +320,7 @@ struct VulTempModule {
     vector<VulTempServ> services;
     vector<VulTempQuery> queries;
     vector<VulTempRegister> registers;
+    vector<VulTempPipeline> pipelines;
     vector<VulTempWire> wires;
     vector<VulTempBRAM> brams;
     vector<VulTempDigitalROM> roms;
@@ -469,6 +490,8 @@ struct VulStaticQuery {
 };
 
 struct VulStaticRegister {
+    VulRegisterRole role = VulRegisterRole::Ordinary;
+    VulDebugLoc declaration_loc;
     BMemberName name;
     VulStaticTypeSignature signature;
     vector<ConfigRealValue> dims; // only for array types
@@ -644,6 +667,7 @@ struct VulStaticModuleInstance {
     unordered_map<ReqServName, VulStaticQuery>        queries;
 
     vector<VulStaticRegister> registers;
+    vector<VulStaticPipeline> pipelines;
     vector<VulStaticWire> wires;
     vector<VulStaticBRAM> brams;
     vector<VulStaticDigitalROM> roms;

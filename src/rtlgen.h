@@ -18,6 +18,7 @@
 #include "type.h"
 
 #include <functional>
+#include <map>
 
 #include "bundlelib.h"
 #include "configlib.h"
@@ -30,7 +31,19 @@ inline string LogicSubModuleName(const ModuleName &module_name) {
     return "LogicSubModule_" + module_name;
 }
 
+struct PipelineRTLUnit {
+    string name, top_function;
+    int latency = 1;
+    VulDebugLoc declaration_loc;
+    vector<string> source, reset_source;
+    string reset_top;
+    std::map<string, pair<int, int>> output_shapes;
+    VulDebugLocs debug;
+    vector<pair<string, string>> bindings;
+};
+
 struct RTLGenResult {
+    vector<PipelineRTLUnit> pipelines;
     bool has_logic_submodule = true;
     vector<string> logic_hls_codes;
     vector<pair<string, string>> logic_port_bindings;
@@ -49,6 +62,8 @@ struct LogicRTLResult {
     vector<string> error_debug_codelines;
     string error_signal_debug_text;
     vector<string> error_signal_names;
+    // OREG names -> little-endian packed limbs, concatenated per array element.
+    std::map<string, vector<std::uint64_t>> output_reset_values;
 };
 
 RTLGenResult genModuleRTL(

@@ -32,6 +32,11 @@ REGISTER(name=counter, ports=2, type=uint32_t);
 | `CONNECT_CR_S` | `srcchild, srcreq, dstserv` |
 | `CONNECT_CR_R` | `srcchild, srcreq, dstreq` |
 | `CONNECT_S_CS` | `srcserv, dstchild, dstserv` |
+| `PIPELINE` | `name, latency`，末尾 IREG／OREG／IVALID／OVALID 声明序列 |
+| `IREG` | `name, type, ports=1`，禁止 dims |
+| `OREG` | `name, type`，禁止 ports、dims 和复位块 |
+| `IVALID` | `name, ports=1`，固定 bool 标量、零初始化 |
+| `OVALID` | `name`，固定 bool 标量、零初始化 |
 | `VERSION`、`USE_VERSION` | `name` |
 | `TOP`、`PROJECT` | `path` |
 
@@ -57,6 +62,8 @@ BRAM(memory, uint32_t, 1024, mode=1rw);
 QUERY 不接受阵列属性，也没有模板坐标调用。带 INTERFACE 的模块必须在接口块内声明 QUERY，再由所选实现提供同名、同返回类型的实现。USE_CHILD_QUERY 的通配维度只叠加到返回类型上，例如 T 在 [2,3] 形状下返回 `std::array<std::array<T,3>,2>`，调用为普通 `alias()`；已有数组返回类型保留在更内层。详见模块和阵列化章节。
 
 运行期资源方法、事务调用坐标与连接端点索引规则保持原有语义。
+
+PIPELINE 仅用于模块实现；IREG、OREG、IVALID、OVALID 仅允许作为其嵌套端点。IREG／OREG 只接受非数组类型（包括解析类型别名后的类型），不接受 dims（包括空列表）；结构体可以含数组字段。OREG 不接受 ports，即使 ports=1 也非法。valid 必须成对且唯一，只有 IREG 可带复位块。端点半寄存器 API、周期计数及输出复位限制见 [流水线块](3-module.md#流水线块-pipeline)。
 
 ## 迁移规则
 

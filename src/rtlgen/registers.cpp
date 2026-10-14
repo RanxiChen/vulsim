@@ -72,6 +72,29 @@ void _procRegisters(RTLGenContext &ctx) {
         const bool uses_hold = usage_it != ctx.register_api_usage.end() && usage_it->second.hold;
         const bool uses_reset = usage_it != ctx.register_api_usage.end() && usage_it->second.reset;
 
+        if (pipelineOutput(reg.role)) {
+            uint32_t width = 0;
+            vector<FlatField> fields;
+            flatten_type_signature(reg.signature, ctx.local_bundlelib, "value", width, fields);
+            const string range = "[" + std::to_string(width - 1) + ":0] ";
+            const string dims = reg.dims.empty() ? "" : "[" + std::to_string(reg.dims[0]) + "]";
+            ctx.rtl_decl.push_back("reg " + range + ("__vul_pipeline_q_" + reg.name) + dims + (reg.role == VulRegisterRole::OutputValid ? " = 1'b0" : "") + ";\n");
+            ctx.rtl_decl.push_back("wire " + range + "__vul_pipeline_d_" + reg.name + dims + ";\n");
+            ctx.rtl_logic.push_back("always @(posedge clk) begin\n");
+            ctx.rtl_logic.push_back("  if (!rstn) begin\n");
+            int reset_count = reg.dims.empty() ? 1 : static_cast<int>(reg.dims[0]);
+            for (int i=0; i<reset_count; ++i) ctx.rtl_logic.push_back("    __vul_pipeline_q_" + reg.name + (reg.dims.empty() ? "" : "[" + std::to_string(i) + "]") + " <= __vul_pipeline_reset_" + reg.name + "_" + std::to_string(i) + ";\n");
+            ctx.rtl_logic.push_back("  end else begin\n");
+            if (reg.dims.empty()) ctx.rtl_logic.push_back("  __vul_pipeline_q_" + reg.name + " <= __vul_pipeline_d_" + reg.name + ";\n");
+            else ctx.rtl_logic.push_back("  for (int i = 0; i < " + std::to_string(reg.dims[0]) + "; ++i) __vul_pipeline_q_" + reg.name + "[i] <= __vul_pipeline_d_" + reg.name + "[i];\n");
+            ctx.rtl_logic.push_back("  end\nend\n");
+            string type = "Int<" + std::to_string(width) + ">";
+            if (!reg.dims.empty()) type = "std::array<" + type + ", " + std::to_string(reg.dims[0]) + ">";
+            ctx.hls_arguments.push_back("const " + type + " &rdata_" + reg.name + "__");
+            ctx.rtl_logicports.push_back(".rdata_" + reg.name + "__(__vul_pipeline_q_" + reg.name + ")");
+            continue;
+        }
+
         bool is_ported = (reg.ports > 1);
         bool is_array = (!reg.dims.empty());
 
@@ -126,7 +149,7 @@ void _procRegisters(RTLGenContext &ctx) {
         string resetnext_port_name = "resetnext_" + reg.name + "__";
         string resetvalue_port_name = "resetvalue_" + reg.name + "__";
 
-        ctx.hls_arguments.push_back("const " + rdata_type_str + " &" + rdata_port_name);
+        if (!pipelineInput(reg.role)) ctx.hls_arguments.push_back("const " + rdata_type_str + " &" + rdata_port_name);
         ctx.hls_arguments.push_back(wen_type_str + " &" + wen_port_name);
         ctx.hls_arguments.push_back(wdata_type_str + " &" + wdata_port_name);
         if (uses_hold) ctx.hls_arguments.push_back(ctrl_type_str + " &" + holdnext_port_name);
@@ -202,7 +225,7 @@ void _procRegisters(RTLGenContext &ctx) {
 
 
         // generate register instances
-        string reg_decl_name = reg.name;
+        string reg_decl_name = pipelineInput(reg.role) ? "__vul_pipeline_q_" + reg.name : reg.name;
         string wen_wire_name = "wen_" + reg.name + "__";
         string wdata_wire_name = "wdata_" + reg.name + "__";
         string holdnext_wire_name = "holdnext_" + reg.name + "__";
@@ -210,7 +233,7 @@ void _procRegisters(RTLGenContext &ctx) {
         string resetvalue_wire_name = "resetvalue_" + reg.name + "__";
 
         if (!is_array) {
-            ctx.rtl_decl.push_back("reg [" + ewid_m1_str + ":0] " + reg_decl_name + ";\n");
+            ctx.rtl_decl.push_back("reg [" + ewid_m1_str + ":0] " + reg_decl_name + (reg.role == VulRegisterRole::InputValid ? " = 1\'b0" : "") + ";\n");
             if (uses_hold) ctx.rtl_decl.push_back("wire " + holdnext_wire_name + ";\n");
             if (uses_reset) ctx.rtl_decl.push_back("wire " + resetnext_wire_name + ";\n");
             ctx.rtl_decl.push_back("wire [" + ewid_m1_str + ":0] " + resetvalue_wire_name + ";\n");
@@ -301,7 +324,7 @@ void _procRegisters(RTLGenContext &ctx) {
             ctx.rtl_logic.push_back("end\n");
         }
 
-        ctx.rtl_logicports.push_back("." + rdata_port_name + "(" + reg_decl_name + ")");
+        if (!pipelineInput(reg.role)) ctx.rtl_logicports.push_back("." + rdata_port_name + "(" + reg_decl_name + ")");
         ctx.rtl_logicports.push_back("." + wen_port_name + "(" + wen_wire_name + ")");
         ctx.rtl_logicports.push_back("." + wdata_port_name + "(" + wdata_wire_name + ")");
         if (uses_hold) ctx.rtl_logicports.push_back("." + holdnext_port_name + "(" + holdnext_wire_name + ")");

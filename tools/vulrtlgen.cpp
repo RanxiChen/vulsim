@@ -551,6 +551,11 @@ static int runVulRTLGen(int argc, char * argv[]) {
                 return std::regex_replace(std::regex_replace(line, own_logic, "__vul_logic"), own_module, "__vul_implementation");
             };
             for (const auto &line : codes.logic_hls_codes) signature += normalized(line);
+            for (const auto &unit : codes.pipelines) {
+                signature += unit.name + ":" + std::to_string(unit.latency);
+                for (const auto &line : unit.source) signature += normalized(identifierReplace(line, unit.top_function, "__vul_pipeline_" + unit.name));
+                for (const auto &line : unit.reset_source) signature += normalized(identifierReplace(line, unit.reset_top, "__vul_pipeline_reset_" + unit.name));
+            }
             signature += "\n// Framework\n";
             for (const auto &line : codes.rtl_skeleten_codes) signature += normalized(line);
             auto [shared, inserted] = shared_implementations.emplace(signature, implementation);
