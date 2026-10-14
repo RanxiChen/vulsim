@@ -255,7 +255,6 @@ RTLGenResult genModuleRTL(
         vector<string> reset_body;
         string signature = "void __vul_compute(";
         string arguments;
-        string iv, ov;
         vector<string> body, pack;
         for (const auto &name : pipe.endpoints) {
             const auto it = std::find_if(module.registers.begin(), module.registers.end(), [&](const auto &r) { return r.name == name; });
@@ -291,6 +290,11 @@ RTLGenResult genModuleRTL(
                 reset_body.push_back("}\n");
             } else unit.output_shapes[name] = {width, reg.dims.empty() ? 1 : static_cast<int>(reg.dims[0])};
             unit.bindings.emplace_back(port, input ? "__vul_pipeline_q_" + name : "__vul_pipeline_d_" + name);
+            if (reg.role == VulRegisterRole::InputValid) unit.input_valid_name = port;
+            if (reg.role == VulRegisterRole::OutputValid) {
+                unit.output_valid_name = port;
+                continue; // RTLZZ owns this output; no bypass in the source.
+            }
             const string value = "__vul_value_" + name;
             // No syntactic initializer on outputs: RTLZZ tracks their undefined leaves.
             body.push_back(type + " " + value + (input ? "{}" : "") + ";\n");
@@ -309,8 +313,6 @@ RTLGenResult genModuleRTL(
                     else pack.push_back(bits + " = " + packFlatFieldExpr(field, access) + ";\n");
                 }
             }
-            if (reg.role == VulRegisterRole::OutputValid) { ov = value; continue; }
-            if (reg.role == VulRegisterRole::InputValid) iv = value;
             if (!arguments.empty()) { arguments += ", "; signature += ", "; }
             signature += (input ? "const " : "") + type + " &" + name;
             arguments += value;
@@ -321,7 +323,6 @@ RTLGenResult genModuleRTL(
         source.push_back("void " + unit.top_function + "() {\n");
         source.insert(source.end(), body.begin(), body.end());
         source.push_back("__vul_compute(" + arguments + ");\n");
-        if (!ov.empty()) source.push_back(ov + " = " + iv + ";\n");
         source.insert(source.end(), pack.begin(), pack.end());
         source.push_back("}\n");
         unit.reset_source.push_back("void " + unit.reset_top + "() {\n");

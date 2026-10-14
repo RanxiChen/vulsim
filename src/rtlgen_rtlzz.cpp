@@ -83,7 +83,7 @@ LogicRTLResult appendLogicRTL(
         const string step = "pipeline " + unit.name + ": latency=" + std::to_string(unit.latency) + ", native RTLZZ";
         if (progress_callback) progress_callback(step);
         else std::cerr << "[vulrtlgen] module " << module.simClassName() << ": " << step << "\n";
-        auto compiled = generateLogicRTLWithRTLzz(path, unit.top_function, lib_include_dir, unit.bindings, unroll_limit, release, false, progress_callback, unit.latency - 1, true, reset_inputs.output_reset_values);
+        auto compiled = generateLogicRTLWithRTLzz(path, unit.top_function, lib_include_dir, unit.bindings, unroll_limit, release, false, progress_callback, unit.latency - 1, true, reset_inputs.output_reset_values, false, unit.input_valid_name, unit.output_valid_name);
         if (!compiled.ok) {
             LogicRTLResult error;
             error.ok = false;

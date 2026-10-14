@@ -44,5 +44,7 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
     int register_stages = 0,
     bool reset_enabled = false,
     const std::map<std::string, std::vector<std::uint64_t>> &input_reset_values = {},
-    bool reset_probe = false
+    bool reset_probe = false,
+    const std::string &input_valid_name = {},
+    const std::string &output_valid_name = {}
 );

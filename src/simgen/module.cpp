@@ -99,18 +99,37 @@ void emitTicksAndHelpers(ModuleGenContext &ctx) {
             decl_private_field.push_back(type + " " + value + "{};\n");
             if (pipe.latency > 1) decl_private_field.push_back("std::array<" + type + ", " + std::to_string(pipe.latency - 1) + "> " + prefix + "_buffer_" + name + "{};\n");
         }
-        decl_private_field.push_back("void " + prefix + "_execute() {\n" + prefix + "_scope{}.compute(" + arguments + ");\n");
-        if (!ov.empty()) decl_private_field.push_back(prefix + "_result_" + ov + " = __vul_store_" + iv + ".get();\n");
+        decl_private_field.push_back("void " + prefix + "_execute() {\n");
+        const string result_valid = ov.empty() ? "" : prefix + "_result_" + ov;
+        const string valid_buffer = ov.empty() ? "" : prefix + "_buffer_" + ov;
+        if (!ov.empty()) {
+            decl_private_field.push_back(result_valid + " = __vul_store_" + iv + ".get();\n");
+            decl_private_field.push_back("if (" + result_valid + ") {\n");
+        }
+        decl_private_field.push_back(prefix + "_scope{}.compute(" + arguments + ");\n");
+        if (!ov.empty()) decl_private_field.push_back("}\n");
+        const string output_valid = pipe.latency == 1 ? result_valid : valid_buffer + "[" + std::to_string(pipe.latency - 2) + "]";
         for (const auto *reg : outputs) {
             const string name = reg->name;
+            const bool guarded = !ov.empty() && name != ov;
             const string value = pipe.latency == 1 ? prefix + "_result_" + name : prefix + "_buffer_" + name + "[" + std::to_string(pipe.latency - 2) + "]";
+            if (guarded) decl_private_field.push_back("if (" + output_valid + ") {\n");
             if (reg->dims.empty()) decl_private_field.push_back("__vul_store_" + name + ".setnext(" + value + ");\n");
             else for (int i = 0; i < reg->dims[0]; ++i) decl_private_field.push_back("__vul_store_" + name + ".setnext(" + std::to_string(i) + ", " + value + "[" + std::to_string(i) + "]);\n");
-            if (pipe.latency > 1) {
+            if (guarded) decl_private_field.push_back("}\n");
+            if (pipe.latency > 1 && name != ov) {
                 const string buffer = prefix + "_buffer_" + name;
-                ctx.impl_commit_field.push_back("for (int i = " + std::to_string(pipe.latency - 2) + "; i > 0; --i) " + buffer + "[i] = " + buffer + "[i-1];\n");
-                ctx.impl_commit_field.push_back(buffer + "[0] = " + prefix + "_result_" + name + ";\n");
+                const string move_guard = guarded ? "if (" + valid_buffer + "[i-1]) " : "";
+                const string insert_guard = guarded ? "if (" + result_valid + ") " : "";
+                ctx.impl_commit_field.push_back("for (int i = " + std::to_string(pipe.latency - 2) + "; i > 0; --i) " + move_guard + buffer + "[i] = " + buffer + "[i-1];\n");
+                ctx.impl_commit_field.push_back(insert_guard + buffer + "[0] = " + prefix + "_result_" + name + ";\n");
             }
+        }
+        // Move valid last so every data buffer observes the old source validity,
+        // regardless of endpoint declaration order.
+        if (pipe.latency > 1 && !ov.empty()) {
+            ctx.impl_commit_field.push_back("for (int i = " + std::to_string(pipe.latency - 2) + "; i > 0; --i) " + valid_buffer + "[i] = " + valid_buffer + "[i-1];\n");
+            ctx.impl_commit_field.push_back(valid_buffer + "[0] = " + result_valid + ";\n");
         }
         decl_private_field.push_back("}\n");
         decl_private_field.push_back("void " + prefix + "_reset() {\n");

@@ -33,6 +33,7 @@ inline string LogicSubModuleName(const ModuleName &module_name) {
 
 struct PipelineRTLUnit {
     string name, top_function;
+    string input_valid_name, output_valid_name;
     int latency = 1;
     VulDebugLoc declaration_loc;
     vector<string> source, reset_source;

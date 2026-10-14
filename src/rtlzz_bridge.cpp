@@ -99,7 +99,9 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
     int register_stages,
     bool reset_enabled,
     const std::map<std::string, std::vector<std::uint64_t>> &input_reset_values,
-    bool reset_probe
+    bool reset_probe,
+    const std::string &input_valid_name,
+    const std::string &output_valid_name
 ) {
     std::ifstream input(source_file);
     if (!input) {
@@ -127,6 +129,8 @@ RTLzzLogicRTLResult generateLogicRTLWithRTLzz(
     options.rtl_module_body = true;
     options.use_circt = use_circt;
     options.register_stages = register_stages;
+    options.input_valid_name = input_valid_name;
+    options.output_valid_name = output_valid_name;
     options.reset_enabled = reset_enabled;
     options.reset_name = "__vul_pipeline_rstn";
     options.input_reset_values = input_reset_values;

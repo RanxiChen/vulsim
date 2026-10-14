@@ -323,7 +323,7 @@
 
 **主要函数/类型**
 - `RTLGenResult`：保存 skeleton、logic、debug map、资源文件列表及多个流水线编译单元。
-- `PipelineRTLUnit`：保存独立流水线源码、端口布局、延迟和映射；`reset_source` / `reset_top` 用于求值输入初值。
+- `PipelineRTLUnit`：保存独立流水线源码、端口布局、延迟和映射；`reset_source` / `reset_top` 用于求值输入初值，`input_valid_name` / `output_valid_name` 指定 RTLZZ 管理的 valid 端口。
 - `LogicRTLResult::output_reset_values`：按 OREG 名返回推导复位值，类型为 `map<string, vector<uint64_t>>`，低位 limb 在前，数组按逐元素布局拼接。
 - `LogicSubModuleName(...)`：生成逻辑子模块名称。
 - `genModuleRTL(...)`：声明唯一的 RTL skeleton/APIInline 生成入口。
@@ -336,7 +336,7 @@
 
 | 实现文件 | 主要函数与职责 |
 |---|---|
-| `module.cpp` | `genModuleRTL`；建立具体生成视图、编排处理阶段、组装输出和调试映射；为每个流水线构造独立 `PipelineRTLUnit`，复用类型打包布局。输出局部值不初始化，由 RTLZZ 检查完整定义；OVALID 直通在用户函数调用之后生成。 |
+| `module.cpp` | `genModuleRTL`；建立具体生成视图、编排处理阶段、组装输出和调试映射；为每个流水线构造独立 `PipelineRTLUnit`，复用类型打包布局。输出局部值不初始化，由 RTLZZ 检查完整定义；记录 IVALID／OVALID 端口名交给 RTLZZ，OVALID 不进入生成的计算函数，也不生成 valid bypass。 |
 | `declarations.cpp` | `_procConstAndBundle`、`_procWires`；常量、类型、helper 和 wire。 |
 | `registers.cpp` | `_procRegisters`；寄存器端口、RTL 实例、零初始化及用户复位块；流水线输入保留仲裁和复位，输出每周期采样，仅流水线驱动 D。输出复位字面量占位符由 RTLZZ 报告回填。 |
 | `transactions.cpp` | `_procRequests`、`_procServicesAndTicks`、`_procQueries`；事务端口、逻辑入口及 priority。 |
@@ -362,7 +362,7 @@
 **文件功能**：封装对 RTLZZ 编译接口的调用，并将其进度事件呈现为 stdout 上的单行动态状态。
 
 **主要函数**
-- `generateLogicRTLWithRTLzz(...)`：读取 logic C++，为 RTLZZ 安装带模块名的进度回调，以 `\r` 原地刷新当前阶段/优化轮次，结束或异常时收尾换行，并生成 SystemVerilog 文本。流水线使用原生后端，内部级数为 `latency−1`；先常量编译输入复位源，再根据划分后的 DAG 求值内部和输出复位值。
+- `generateLogicRTLWithRTLzz(...)`：读取 logic C++，为 RTLZZ 安装带模块名的进度回调，以 `\r` 原地刷新当前阶段/优化轮次，结束或异常时收尾换行，并生成 SystemVerilog 文本。流水线使用原生后端，内部级数为 `latency−1`，传递专用 valid 端口配置；先常量编译输入复位源，再根据划分后的 DAG 求值内部和输出复位值。
 
 ## src/rtlzz_bridge.hpp
 
@@ -390,7 +390,7 @@
 |---|---|
 | `common.cpp` | `genCurrentTimeString`、内部 `genHeaderPrelude` 与共享子实例命名辅助。 |
 | `headers.cpp` | `genStaticConfigHeaderCode`、`genStaticBundle`、`genStaticBundleHeaderCode`、`genStaticGlobalHelperHeaderCode`、`genStaticProjectHeaderCode`。 |
-| `module.cpp` | `genStaticModuleCodeHpp`；局部声明、Tick／helper、功能阶段编排及最终声明／实现组装；在模块自身执行节点调用隔离的流水线计算作用域，读取旧缓冲队尾，提交阶段推进 `latency−1` 级数据和 valid 缓冲。输入全部复位后执行一次组合函数，设置输出复位值并填满所有缓冲；构造和再次复位均执行，无需填充计数或 valid 门控。 |
+| `module.cpp` | `genStaticModuleCodeHpp`；局部声明、Tick／helper、功能阶段编排及最终声明／实现组装；在模块自身执行节点调用隔离的流水线计算作用域，读取旧缓冲队尾，提交阶段推进 `latency−1` 级数据和 valid 缓冲。输入全部复位后执行一次组合函数，设置输出复位值并填满所有缓冲；构造和再次复位均无条件执行。有 valid 时跳过无效输入计算和无效数据搬移，valid 在全部数据搬移后推进，无需填充计数。 |
 | `transactions.cpp` | `emitTransactions`；Request、Service、Query 包装及边界 Service 转发。 |
 | `resources.cpp` | `emitResources`；状态组件、复位值零初始化、用户复位、周期提交与资源清单；为流水线端点声明独立底层存储和半寄存器包装，输入加入常规复位，输出复位交由流水线计算函数设置。 |
 | `hierarchy.cpp` | `emitHierarchy`；具体子实例类型、坐标模板、请求连接与子接口引出；通配 QUERY 生成无参快照函数，以通配维度嵌套返回 std::array。 |

@@ -292,7 +292,7 @@ SIMULATION() {
 
 - `PIPELINE(name, latency, IREG(...), OREG(...), IVALID(...), OVALID(...)) { ... }` 只在模块实现中使用，latency>0；边界输入生效后恰好 latency 周期写入边界输出。
 - IREG 接受 name/type/ports 和可选复位块，外部只有 setnext；OREG 仅接受 name/type，外部只读，禁止 ports 和复位块。两者禁止 dims，类型及其别名目标必须非数组；结构体可含数组字段。内部输入是 const 值参数，输出是引用参数，不可访问其他 VUL 组件，仅可调用自封闭帮助函数。
-- IVALID/OVALID 可同时省略，否则各唯一一个；固定 bool 标量、零初始化，仅 IVALID 允许 ports。内部可读 IVALID，不能访问 OVALID；生成器自动生成等延迟 valid 通路。
-- valid 不暂停、不屏蔽计算和输出；未写入的 IVALID 保持，脉冲需明确写 false。rtlgen 必须完整定义每个 OREG，simgen 不作完整赋值／可综合检查。
+- IVALID/OVALID 可同时省略，否则各唯一一个；固定 bool 标量、零初始化，仅 IVALID 允许 ports。内部可读 IVALID，不能访问 OVALID；simgen 自动推进 valid；rtlgen 将端口名交给 RTLZZ，在物化后生成等延迟 valid 链。
+- valid 不暂停流水线。simgen 跳过无效输入计算和无效缓冲的数据传递，valid 始终推进；rtlgen 的 valid 链持续推进，中间数据寄存器由来源阶段的 valid 使能，各阶段直接引用 IVALID 时读取对应阶段的 valid；OVALID 为 false 时数据不可依赖。simgen 复位仍无条件计算初值。未写入的 IVALID 保持，脉冲需明确写 false。rtlgen 必须完整定义每个 OREG，simgen 不作完整赋值／可综合检查。
 - IREG/IVALID 有复位；OREG 禁止用户复位块，其复位值由输入初值运行函数推导。全部内部寄存器、缓冲和输出恢复对应推导值，OVALID 为 false，复位清除在途事务。rtlgen 采用同步低有效 rstn 复位字面量。
 - RTLZZ 原生后端插入 latency−1 级内部寄存器；simgen 使用同级数缓冲。普通逻辑的 CIRCT 设置不改变 PIPELINE 后端。

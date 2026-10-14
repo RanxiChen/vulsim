@@ -20,7 +20,7 @@ REGISTER(name=counter, ports=2, type=uint32_t);
 | `REGISTER` | `name, type, ports=1, dims=[]` |
 | `WIRE` | `name, type` |
 | `REQUEST` | `name, handshake=false, dims=[]`，末尾业务参数序列 |
-| `SERVICE` | `name, handshake=false, dims=[], priority=0, ready`，末尾业务参数序列；ready 可省略 |
+| `SERVICE` | `name, handshake=false, dims=[], priority=0, ready=statement`，末尾业务参数序列 |
 | `QUERY` | `name, type` |
 | `CHILD_INSTANCE` | `module, name, dims=[]`，末尾参数覆盖和坐标绑定 |
 | `USE_CHILD_SERVICE` | `instance, service, alias, dims`，末尾业务参数序列；dims 可省略以推断通配形状 |

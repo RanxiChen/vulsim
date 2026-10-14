@@ -671,17 +671,16 @@ IREG 接受 name、type、ports 和可选复位块。OREG 仅接受 name、type�
 
 IVALID／OVALID 可同时省略；出现任一声明时，必须各声明且仅声明一个。它们固定为 bool 标量，不接受类型、维度或初始化块。IVALID 可设置 ports，沿用输入寄存器的仲裁规则；OVALID 只接受 name。
 
-内部 IREG 等价于 const 值参数，OREG 等价于可写引用参数，可以先赋值后读取。IVALID 是可读的 const bool 参数，OVALID 不在函数体作用域内。生成器在函数调用之后自动添加 `ovalid=ivalid` 通路，它与数据具有相同延迟。rtlgen 要求所有执行路径完整定义 OREG；不能仅在 valid 为 true 时赋值。simgen 不检查输出完整定义，也不检查可综合性。
+内部 IREG 等价于 const 值参数，OREG 等价于可写引用参数，可以先赋值后读取。IVALID 是可读的 const bool 参数，OVALID 不在函数体作用域内。OVALID 与数据具有相同延迟。rtlgen 要求所有执行路径完整定义 OREG；valid 信号对寄存器的控制会被 PIPELINE 隐式处理，用户不能仅在 valid 为 true 时赋值。simgen 不检查输出完整定义，也不检查可综合性。
 
 ### 周期计数与有效位
 
 若输入寄存器的值在边沿 k 生效，计算结果和对应 valid 在边沿 k+latency 生效于输出寄存器。调用 setnext 本身尚未让输入值生效，必须从提交输入的边沿开始计数。
 
-父项目生成两侧寄存器，RTLZZ 插入 latency−1 级内部寄存器。因此 latency=1 是两侧寄存器之间的组合计算。simgen 每周期完成整个函数计算，再通过 latency−1 级值缓冲模拟相同延迟。
+父项目生成两侧寄存器，RTLZZ 插入 latency−1 级内部寄存器。simgen 通过 latency−1 级值缓冲模拟相同延迟；无 valid 时每周期计算，声明 valid 时只对有效输入计算。
 
-流水线每周期推进，没有暂停或握手。valid 是普通的延迟数据，不是时钟使能：无效输入仍计算并更新输出，只是对应 OVALID 为 false。未写入的 IREG 和 IVALID 保持原值；IVALID 不会自动清零，需要发送单周期脉冲时应在下一周期明确写入 false。
+流水线每周期推进，没有暂停或握手。OVALID 为 false 时数据不作保证。simgen 中，IVALID 为 false 时跳过组合函数，队尾无效时不写 OREG，但 valid 每周期正常推进。未写入的 IREG 和 IVALID 保持原值；IVALID 不会自动清零，需要发送单周期脉冲时应在下一周期明确写入 false。
 
 ### 初始化与复位
 
-IREG 遵循声明复位值，IVALID 初始化及复位为 false。OREG 禁止用户复位块，其复位值自动由整组输入复位值运行组合函数得到；OVALID 复位为 false。复位期间，输出和内部状态保持这些推导值，复位会清除在途事务，无需填充计数器或输出屏蔽。
-
+IREG 遵循声明复位值，IVALID 初始化及复位为 false。OREG 禁止用户复位块，其复位值自动由整组输入复位值运行组合函数得到。复位后，输出和内部状态保持这些推导值。

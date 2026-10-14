@@ -2,6 +2,7 @@
 """PIPELINE grammar, half APIs, standalone lowering, and cycle alignment."""
 from pathlib import Path
 import shutil
+import re
 import subprocess
 import tempfile
 
@@ -26,7 +27,7 @@ def generate(tool, case, output, success=True, circt=False):
 
 with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
     base = Path(directory)
-    for latency in (1, 2, 8):
+    for latency in (1, 2, 3, 4, 8):
         case = base/f'case{latency}'
         shutil.copytree(FIXTURE, case)
         header = case/'header.hpp'
@@ -46,6 +47,13 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
                 assert 'oreg_reset output vector<uint64_t>=' in (out/'sim/top.sv.dbg').read_text()
                 assert "__vul_pipeline_q_ovalid = 1'b0" in sv
                 assert 'wen_output' not in sv
+                pipeline_sources = list((out/'sim').glob('*.pipeline_transform.cpp'))
+                assert len(pipeline_sources) == 1, pipeline_sources
+                pipeline_source = pipeline_sources[0].read_text()
+                assert 'bool __vul_port_ovalid;' in pipeline_source
+                assert '__vul_value_ovalid' not in pipeline_source
+                assert not re.search(r'__vul_port_ovalid\s*=', pipeline_source)
+                assert len(re.findall(r'logic rtlzz_valid_s\d+;', sv)) == latency-1
                 if latency > 1:
                     assert 'always_ff' in sv
                     assert 'internal_stages=' in (out/'sim/top.sv.dbg').read_text()
