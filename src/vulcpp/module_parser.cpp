@@ -14,13 +14,48 @@
 
 #include "module_parser.hpp"
 
+#include "common.hpp"
 #include "context.hpp"
 #include "declaration_args.hpp"
 #include "module_handlers.hpp"
 #include "versioning.hpp"
 #include "../cppparse.hpp"
 
+#include <algorithm>
+
 using namespace cppparse;
+
+// PROJECT is file metadata, independent of INTERFACE and VERSION selection.
+static string takeProjectPath(vector<MacroEntry> &entries, const VCPPModuleContext &context) {
+    string result;
+    bool seen = false;
+    for (const auto &entry : entries) {
+        if (entry.name != "PROJECT") continue;
+        VulErrorContextGuard guard{"PROJECT at " + context.getOriginalPosition(entry.pos)};
+        if (context.is_global_header) throw VulException("PROJECT is only allowed in module implementation files");
+        if (seen) throw VulException("Multiple PROJECT declarations are not allowed");
+        seen = true;
+        if (entry.has_body) throw VulException("PROJECT must be a declaration without code block");
+        result = parsePathMacroArg(entry.args.at(0));
+        if (result.empty()) throw VulException("PROJECT path cannot be empty");
+    }
+    std::erase_if(entries, [](const auto &entry) { return entry.name == "PROJECT"; });
+    return result;
+}
+
+string scanModuleProjectPath(const string &filepath) {
+    VulErrorContextGuard guard{"scanning PROJECT in module file " + filepath};
+    auto stripped = stripComments(readFileLines(filepath));
+    VCPPModuleContext context;
+    context.temp.filepath = filepath;
+    context.line_mapping = std::move(stripped.mapping);
+    auto entries = findAllMacroEntries(stripped.lines);
+    // Only normalize metadata: global symbols are not available yet.
+    for (auto &entry : entries) {
+        if (entry.name == "PROJECT") entry = normalizeDeclaration(entry, context.getOriginalPosition(entry.pos));
+    }
+    return takeProjectPath(entries, context);
+}
 
 VulTempModule parseTempModule(
     const string &module_name,
@@ -46,6 +81,7 @@ VulTempModule parseTempModule(
         VulErrorContextGuard declaration_context{"Declaration at " + context.getOriginalPosition(entry.pos)};
         entry = normalizeDeclaration(entry, context.getOriginalPosition(entry.pos));
     }
+    takeProjectPath(macro_entries, context);
     if (!is_global_header) {
         macro_entries = selectVersionedModuleEntries(macro_entries, context);
     }

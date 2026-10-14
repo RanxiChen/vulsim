@@ -98,42 +98,10 @@ int simgenStatic(const SimGenArgs &args) {
         throw VulException("Main file does not exist: " + main_file);
     }
 
-    auto resolve_from_main = [&](const string &raw_path) -> std::filesystem::path {
-        std::filesystem::path p(raw_path);
-        if (p.is_absolute()) {
-            return p.lexically_normal();
-        }
-        return (main_path.parent_path() / p).lexically_normal();
-    };
-
     VulErrorContextGuard _err{"generating project from " + main_path.parent_path().string()};
     VulStaticProject project = parseVcppStaticProject(proj_dir, top_file, main_path.string());
 
-    std::filesystem::path effective_top_path;
-    if (!top_file.empty()) {
-        effective_top_path = std::filesystem::path(top_file);
-    } else if (!project.test_harness.top_module_path.empty()) {
-        effective_top_path = resolve_from_main(project.test_harness.top_module_path);
-    }
-    if (effective_top_path.empty()) {
-        throw VulException("Top module path is not specified. Use -t/--top or TOP(...) in TestMain.");
-    }
-
-    std::filesystem::path proj_path;
-    if (!proj_dir.empty()) {
-        proj_path = std::filesystem::path(proj_dir);
-    } else if (!project.test_harness.project_dir_path.empty()) {
-        proj_path = resolve_from_main(project.test_harness.project_dir_path);
-    } else if (!main_path.empty()) {
-        proj_path = main_path.parent_path();
-        if (proj_path.empty()) proj_path = ".";
-    } else {
-        proj_path = effective_top_path.parent_path();
-        if (proj_path.empty()) proj_path = ".";
-    }
-    if (!std::filesystem::exists(proj_path) || !std::filesystem::is_directory(proj_path)) {
-        throw VulException("Project directory does not exist or is not a directory: " + proj_path.string());
-    }
+    std::filesystem::path proj_path(project.project_dir_path);
 
     std::filesystem::path out_path(out_dir);
     if (!prepareOutputDirectory(out_path, out_dir, args.force)) {
@@ -389,7 +357,7 @@ static int runVulSimGen(int argc, char * argv[]) {
         .default_value(std::string(""))
         .required();
     parser.add_argument("-p", "--project")
-        .help("overrides the project directory declared by PROJECT(...) in the main test file")
+        .help("sets the first project directory searched before Main/Top PROJECT and the Top directory")
         .default_value(std::string(""));
     parser.add_argument("-o", "--out")
         .help("sets the output directory for generated code (default: ./simout)")

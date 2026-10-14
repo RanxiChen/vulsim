@@ -22,6 +22,10 @@
 
 #pragma once
 
+#ifndef PROJECT
+#define PROJECT(path)
+#endif
+
 /**
  * The contents of this header file are only used to assist in syntax checking
  * and code completion during coding, and have no connection to the final

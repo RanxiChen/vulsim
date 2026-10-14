@@ -3,6 +3,8 @@
 在 VulCPP 中，模块是构建硬件设计的基本单元。每个模块通常由一个同名 C++ 头文件定义，文件中包含模块参数、接口、状态组件、子实例、连接关系和行为代码。
 
 
+模块实现文件可声明一次 `PROJECT("..")` 或 `PROJECT(path="..")`，指定相对于本文件目录的项目根目录。它是文件级声明，可放在 `INTERFACE` 前，不能放入 `INTERFACE` / `VERSION` 块。只有作为 Top 的模块中的声明参与本次工程目录选择，子模块中的声明不改变工程目录。
+
 ## 3.1 通用参数约定
 
 每个宏都有固定参数顺序，也支持显式 `key=value`，完整列表见 [声明 API 参数表](0-declarations.md)。位置参数必须在命名参数之前；命名参数可以按任意顺序填写。省略可选参数使用默认值，跳过中间参数时应显式命名后续参数。
@@ -39,7 +41,7 @@ VERSION(other_version) {
 }
 ```
 
-`INTERFACE()` 必须是模块中的第一个顶层宏，并且必须位于所有实现代码之前。`USE_VERSION(name);` 用于选择当前实际使用的实现版本；如果使用 `USE_VERSION`，它必须紧跟在 `INTERFACE()` 之后，后面必须定义至少一个 `VERSION(name) { ... }`，并且被 `USE_VERSION` 选中的版本必须存在。
+除文件级 `PROJECT` 外，`INTERFACE()` 必须是模块中的第一个顶层宏，并且必须位于所有实现代码之前。`USE_VERSION(name);` 用于选择当前实际使用的实现版本；如果使用 `USE_VERSION`，它必须紧跟在 `INTERFACE()` 之后，后面必须定义至少一个 `VERSION(name) { ... }`，并且被 `USE_VERSION` 选中的版本必须存在。
 
 `INTERFACE()` 中只允许出现 `PARAMETER`、`REQUEST` 和不带代码块的 `SERVICE`、`QUERY` 声明：
 

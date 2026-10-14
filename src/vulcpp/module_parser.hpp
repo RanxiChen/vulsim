@@ -24,3 +24,6 @@ VulTempModule parseTempModule(
     unordered_map<string, string> *global_names = nullptr,
     bool is_global_header = false
 );
+
+// Read file-level PROJECT before parsing global headers.
+string scanModuleProjectPath(const string &filepath);

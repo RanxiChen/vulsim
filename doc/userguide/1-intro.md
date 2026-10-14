@@ -162,7 +162,7 @@ QUERY(status, Status);
 ./vulsimgen -m example/prodcon/Main.cpp
 # -m/--main: 必需，指定 Main 测试文件
 # -t/--top: 可选，覆盖 Main 中 TOP(...) 声明的顶层模块路径
-# -p/--project: 可选，覆盖 Main 中 PROJECT(...) 声明的项目目录
+# -p/--project: 可选，优先查找此目录的 header，再尝试 Main/Top PROJECT 和 Top 所在目录
 # -l/--lib: 运行库目录（默认 ./vullib）
 # -o/--out: 仿真代码输出目录（默认 ./simout）
 # -f/--force: 输出目录非空时跳过确认并清空；未指定时会询问

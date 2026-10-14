@@ -506,6 +506,7 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 
 **文件功能**：读取 VULC++ 工程、递归实例化模块，并建立仿真 harness 与顶层的连接。
 
+- header 按命令行项目目录 → Main PROJECT → Top 文件级 PROJECT → Top 所在目录回退；全缺失时警告并跳过。`VulStaticProject::project_dir_path` 保存最终目录，供子模块和工具资源复制共用。`module_parser.cpp` 在全局 header 解析前扫描文件级 PROJECT，并在 VERSION 选择前移除该元数据。`regression/generator_project_paths.py` 验证搜索优先级、回退、无 header 警告和两个工具的可运行输出。
 - `parseVcppStaticProjectImpl(...)`：解析工程并逐坐标展开具体实例，落实 `PARAM(name)=COORD(dim)` 坐标绑定和普通参数覆盖，保留声明路径用于共享模板文件；构建用于更新顺序分析的 TestMain；子 Request 驱动的顶层内部 Service 不添加虚构的外部调用源。
 
 ## src/vullib.hpp

@@ -427,7 +427,7 @@ static int runVulRTLGen(int argc, char * argv[]) {
         .help("sets the directory for runtime library files (default: ./vullib)")
         .default_value(std::string("./vullib"));
     parser.add_argument("-p", "--project")
-        .help("sets the project directory (default: parent directory of the top module file)")
+        .help("sets the first project directory searched before Main/Top PROJECT and the Top directory")
         .default_value(std::string(""));
     parser.add_argument("-j")
         .help("maximum concurrent module processes (default: 1)")
@@ -481,21 +481,7 @@ static int runVulRTLGen(int argc, char * argv[]) {
     VulErrorContextGuard _err{"generating project from " + proj_dir};
     VulStaticProject project = parseVcppStaticProject(proj_dir, top_file, main_file);
 
-    // parseVcppStaticProject resolves PROJECT(...) relative to Main.cpp, but
-    // resource copying below also needs that resolved directory. Keep an
-    // explicit project path here when --project was not supplied.
-    if (proj_dir.empty()) {
-        if (!main_file.empty() && !project.test_harness.project_dir_path.empty()) {
-            proj_dir = (std::filesystem::path(main_file).parent_path() /
-                        project.test_harness.project_dir_path).lexically_normal().string();
-        } else if (!main_file.empty()) {
-            auto main_parent = std::filesystem::path(main_file).parent_path();
-            proj_dir = (main_parent.empty() ? std::filesystem::path(".") : main_parent).string();
-        } else if (!top_file.empty()) {
-            auto top_parent = std::filesystem::path(top_file).parent_path();
-            proj_dir = (top_parent.empty() ? std::filesystem::path(".") : top_parent).string();
-        }
-    }
+    proj_dir = project.project_dir_path;
 
     std::filesystem::path out_path(out_dir);
     if (!prepareOutputDirectory(out_path, out_dir, force)) {

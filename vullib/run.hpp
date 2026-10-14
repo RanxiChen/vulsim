@@ -19,4 +19,6 @@ void sim_exit();
 
 #define TOP(path)
 
+#ifndef PROJECT
 #define PROJECT(path)
+#endif

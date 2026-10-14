@@ -108,10 +108,6 @@ static vector<std::filesystem::path> collectHeaderParseOrder(const std::filesyst
         item_to_path[key] = entry.path();
     }
 
-    if (all_items.empty()) {
-        throw VulException("Header directory contains no .h or .hpp files: " + header_dir.string());
-    }
-
     unordered_map<string, unordered_set<string>> edges_former_to_latter;
     for (const auto &[key, file_path] : item_to_path) {
         for (const auto &included_raw : scanHeaderIncludes(file_path)) {
@@ -182,7 +178,7 @@ static void importGlobalHeaderModule(
     );
 }
 
-static void parseProjectHeaders(
+static bool parseProjectHeaders(
     VulStaticProject &project,
     const std::filesystem::path &proj_dir
 ) {
@@ -202,7 +198,7 @@ static void parseProjectHeaders(
         throw VulException("Both header directory and single-header file exist in project root; keep only one header system");
     }
     if (!has_header_dir && !has_header_hpp && !has_header_h) {
-        throw VulException("Project root must contain either a header directory or a header.hpp/header.h file: " + proj_dir.string());
+        return false;
     }
 
     vector<path> header_files;
@@ -211,6 +207,8 @@ static void parseProjectHeaders(
     } else {
         header_files.push_back(has_header_hpp ? header_hpp : header_h);
     }
+
+    if (header_files.empty()) return false;
 
     for (const auto &header_path : header_files) {
         VulErrorContextGuard _err{"parsing global header file " + header_path.string()};
@@ -222,6 +220,7 @@ static void parseProjectHeaders(
         );
         importGlobalHeaderModule(project, fake_module);
     }
+    return true;
 }
 
 
@@ -275,23 +274,36 @@ VulStaticProject parseVcppStaticProjectImpl(
         throw VulException("Top file does not exist or is not a regular file: " + top_path.string());
     }
 
-    path proj_dir;
-    if (!project_dir.empty()) {
-        proj_dir = path(project_dir);
-    } else if (!scanned_project_dir_path.empty()) {
-        proj_dir = resolve_from_main(scanned_project_dir_path, "PROJECT");
-    } else if (!main_path.empty()) {
-        proj_dir = main_path.parent_path();
-        if (proj_dir.empty()) proj_dir = ".";
-    } else {
-        proj_dir = top_path.parent_path();
-        if (proj_dir.empty()) proj_dir = ".";
+    vector<path> project_candidates;
+    if (!project_dir.empty()) project_candidates.emplace_back(project_dir);
+    if (!scanned_project_dir_path.empty()) {
+        project_candidates.push_back(resolve_from_main(scanned_project_dir_path, "PROJECT"));
     }
-    if (!exists(proj_dir) || !is_directory(proj_dir)) {
-        throw VulException("Project directory does not exist or is not a directory: " + proj_dir.string());
+    const string top_project_path = scanModuleProjectPath(top_path.string());
+    if (!top_project_path.empty()) {
+        project_candidates.push_back((top_path.parent_path() / path(top_project_path)).lexically_normal());
     }
+    project_candidates.push_back(top_path.has_parent_path() ? top_path.parent_path() : path("."));
 
-    parseProjectHeaders(project, proj_dir);
+    path proj_dir;
+    bool found_headers = false;
+    for (const auto &candidate : project_candidates) {
+        std::error_code ec;
+        if (!is_directory(candidate, ec)) continue;
+        // Retain the highest-priority existing directory if no headers are found.
+        if (proj_dir.empty()) proj_dir = candidate;
+        if (parseProjectHeaders(project, candidate)) {
+            proj_dir = candidate;
+            found_headers = true;
+            break;
+        }
+    }
+    if (!found_headers) {
+        std::cerr << "Warning: No project header found; skipping header parsing. Searched:";
+        for (const auto &candidate : project_candidates) std::cerr << "\n  " << candidate.string();
+        std::cerr << std::endl;
+    }
+    project.project_dir_path = proj_dir.lexically_normal().string();
 
     if (!main_file_path.empty()) {
         {
@@ -301,6 +313,7 @@ VulStaticProject parseVcppStaticProjectImpl(
     }
 
     unordered_map<ModuleName, path> module_file_path_cache;
+    module_file_path_cache[top_path.stem().string()] = top_path;
     auto find_module_file = [&](const ModuleName& mod_name) -> std::optional<path> {
         auto iter = module_file_path_cache.find(mod_name);
         if (iter != module_file_path_cache.end()) {

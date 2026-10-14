@@ -23,6 +23,7 @@
 #include <unordered_map>
 
 struct VulStaticProject {
+    string                     project_dir_path; // Resolved directory for modules and resources.
     VulStaticConfigLib          global_configlib;
     VulStaticBundleLib          global_bundlelib;
     vector<string>              global_helper_codes;

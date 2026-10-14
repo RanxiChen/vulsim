@@ -26,11 +26,12 @@ TOP("./Top.hpp");
 PROJECT(".");
 ```
 
-- `TOP(path)` 指顶层硬件模块；`PROJECT(path)` 指项目根。若 Main 已声明，`vulsimgen -m Main.cpp` 即可；可用 `-t/-p/-l/-o` 覆盖。
+- `TOP(path)` 指顶层硬件模块；`PROJECT(path)` 指项目根，也可在模块实现文件顶层声明一次，相对路径基于该文件目录。若 Main 已声明，`vulsimgen -m Main.cpp` 即可；可用 `-t/-p/-l/-o` 覆盖。
 
 ## 2. header 与局部定义
 
-- 项目根必须存在 `header/` 或 `header.hpp`/`header.h` 之一，不能同时存在目录和单文件。`header/` 中所有 `.h/.hpp` 按 `#include` 拓扑排序解析，被 include 者先解析；循环报错。
+- 按 `-p/--project` → Main 中的 `PROJECT`（如有）→ Top 模块文件中的 `PROJECT` → Top 文件所在目录的优先级查找项目 header。命令行相对路径基于当前工作目录，`PROJECT` 相对路径基于声明所在文件的目录。路径不存在、没有 header 或 `header/` 内没有 `.h/.hpp` 时继续尝试下一项；全部未找到时输出警告并跳过 header 解析。已找到的 header 若存在形式冲突、循环 include 或声明错误，仍然报错。最终选中的项目目录也用于子模块查找和资源复制；全部未找到 header 时使用最高优先级的已有目录。
+- 候选项目根的 `header/` 和 `header.hpp`/`header.h` 不能同时存在。`header/` 中所有 `.h/.hpp` 按 `#include` 拓扑排序解析，被 include 者先解析；循环报错。
 - 项目级 header 只放全局共享定义：`CONFIG`、`STRUCT`、`ENUM`、`ALIAS`、`HELPER`。这些定义对所有模块可见，即使模块没有 include 它。
 - 全局 `CONFIG` 和 bundle（`STRUCT/ENUM/ALIAS*`）共用同一命名域，不允许重名或覆盖。
 - 硬件模块/Main 内也可写这些宏，但只作为模块局部定义。
