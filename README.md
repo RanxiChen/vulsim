@@ -1,5 +1,7 @@
 # 泺源微架构建模与模拟平台
 
+## 项目概述
+
 泺源（LuoYuan）微架构建模与模拟平台，是一套用于处理器微架构建模、探索与调试的软件平台。基于新型高层芯片描述语言：可视化微架构语言（Visualized μarch Language，VUL）构建。
 
 基于VUL，泺源平台为新型微架构设计者提供了：
@@ -9,12 +11,20 @@
 3. 内置调试工具和性能统计工具
 4. 自动化生成 RTL 代码
 
+## 项目地图
+
 本项目为 Vul 的核心命令行工具链。相关项目目录如下：
 
-- [前端GUI（Demo）](https://github.com/meng-cz/VulSimGUI)
-- [案例项目：RISC-V TPU](https://github.com/meng-cz/oootpu-sim)：基于 VUL 原生设计实现的使用 RISC-V 指令扩展的可编程 TPU 计算核心
-- [案例项目：TCA-ADK](https://gitee.com/wei-yanxuan/TCA-ADK)：张量计算适配评价框架，为后续张量加速器微架构探索与性能模拟提供算子分析和架构需求输入
-- [案例项目：3DCacheSim](https://gitee.com/x1jia/large-cache-sched-sim)：面向 Chiplet 多核处理器与 3D 堆叠缓存架构的系统级周期精确模拟框架
+| 组成部分 | 类型 | 职责 | 当前状态 | 入口 |
+| --- | --- | --- | --- | --- |
+| RTLZZ: VULC++-RTL编译器 | 子仓库 | 把VULC++描述的组合逻辑函数编译成verilog | 与主项目同步开发 | [RTLZZ](https://github.com/meng-cz/RTLzz) |
+| VUL Tools VSCode 插件 | 独立子项目 | 用于可视化VUL开发的VSCode插件与工具包 | 开发中 | [VUL Tools](https://github.com/meng-cz/vultools) |
+| 前端GUI（Demo）| 独立子项目 | 基于PYQT的VUL组件可视化工具Demo | 已停止 | [前端GUI（Demo）](https://github.com/meng-cz/VulSimGUI) |
+| NullRVSim模拟器 | 独立子项目 | 基于VUL模拟代码架构的RISC-V微架构性能模拟器 | 开发中 | [NullRVSim](https://github.com/meng-cz/nullrvsim) |
+| FASE-RV64系统调用仿真框架 | 独立子项目 | 为类RTL模拟提供微架构无关的多线程系统调用仿真支持 | 开发中 | [FASE-RV64](https://github.com/meng-cz/fase-rv64) |
+| 案例项目：RISC-V TPU | 独立子项目 | 基于 VUL 原生设计实现的使用 RISC-V 指令扩展的可编程 TPU 计算核心 | 开发中 | [RISC-V TPU](https://github.com/meng-cz/oootpu-sim) |
+| 案例项目：TCA-ADK | 独立子项目 | 张量计算适配评价框架，为后续张量加速器微架构探索与性能模拟提供算子分析和架构需求输入 | 开发中 | [TCA-ADK](https://gitee.com/wei-yanxuan/TCA-ADK) |
+| 案例项目：3DCacheSim | 独立子项目 | 面向 Chiplet 多核处理器与 3D 堆叠缓存架构的系统级周期精确模拟框架 | 开发中 | [3DCacheSim](https://gitee.com/x1jia/large-cache-sched-sim) |
 
 ## User Guide
 
@@ -86,7 +96,7 @@ make -j8
 - `userguide`：用户手册文档目录
 - `example`：示例代码目录
 
-运行示例：
+## 运行示例：
 
 ```bash
 # 生成仿真代码
@@ -147,12 +157,3 @@ cd rtlout
 
 “泺”作为自然源头，代表着创新的起点，就像趵突泉为古泺水注入不竭动能，平台也为处理器研发提供源头性的性能模拟支撑；“源”也代表着处理器设计的源头，强调技术的源头开放、共享协作。“泺源”二字彰显了平台以源头创新驱动芯片技术突破的愿景，成为处理器研发领域的核心引擎。
 
-## 致谢
-
-### 引用开源项目：
-
-- pugixml: [https://github.com/zeux/pugixml](https://github.com/zeux/pugixml)
-- json : [https://github.com/nlohmann/json](https://github.com/nlohmann/json)
-- argparse : [https://github.com/p-ranav/argparse](https://github.com/p-ranav/argparse)
-
-生成 RTL 时可使用 `vulrtlgen -r -t example/aes1/AES1.hpp`（或 `--release`），不保留中间 `.logic.cpp`、`.dbg`、`.dbgmap` 和 TestMain C++ 文件。默认模式保持原有调试输出；综合所需的 RTL 库及显式资源仍会复制。
