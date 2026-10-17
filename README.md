@@ -11,6 +11,10 @@
 3. 内置调试工具和性能统计工具
 4. 自动化生成 RTL 代码
 
+## 项目总架构
+
+![项目总架构图](./doc/arch.png "项目总架构图")
+
 ## 项目地图
 
 本项目为 Vul 的核心命令行工具链。相关项目目录如下：
@@ -25,6 +29,8 @@
 | 案例项目：RISC-V TPU | 独立子项目 | 基于 VUL 原生设计实现的使用 RISC-V 指令扩展的可编程 TPU 计算核心 | 开发中 | [RISC-V TPU](https://github.com/meng-cz/oootpu-sim) |
 | 案例项目：TCA-ADK | 独立子项目 | 张量计算适配评价框架，为后续张量加速器微架构探索与性能模拟提供算子分析和架构需求输入 | 开发中 | [TCA-ADK](https://gitee.com/wei-yanxuan/TCA-ADK) |
 | 案例项目：3DCacheSim | 独立子项目 | 面向 Chiplet 多核处理器与 3D 堆叠缓存架构的系统级周期精确模拟框架 | 开发中 | [3DCacheSim](https://gitee.com/x1jia/large-cache-sched-sim) |
+
+VULIDE、自动化测试、IP核库、更多示例项目等正在规划中。
 
 ## User Guide
 
