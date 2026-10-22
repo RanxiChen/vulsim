@@ -108,12 +108,7 @@ source regression.sh
 - `userguide`：用户手册文档目录
 - `example`：示例代码目录
 
-<<<<<<< HEAD
 ## 运行示例：
-=======
-
-运行示例：
->>>>>>> 69b23ec (unify vul file extensions to .vul, .utb, .uh)
 
 ```bash
 # 生成仿真代码
@@ -174,13 +169,3 @@ cd rtlout
 
 “泺”作为自然源头，代表着创新的起点，就像趵突泉为古泺水注入不竭动能，平台也为处理器研发提供源头性的性能模拟支撑；“源”也代表着处理器设计的源头，强调技术的源头开放、共享协作。“泺源”二字彰显了平台以源头创新驱动芯片技术突破的愿景，成为处理器研发领域的核心引擎。
 
-<<<<<<< HEAD
-=======
-## 致谢
-
-### 引用开源项目：
-
-- pugixml: [https://github.com/zeux/pugixml](https://github.com/zeux/pugixml)
-- json : [https://github.com/nlohmann/json](https://github.com/nlohmann/json)
-- argparse : [https://github.com/p-ranav/argparse](https://github.com/p-ranav/argparse)
->>>>>>> 69b23ec (unify vul file extensions to .vul, .utb, .uh)
