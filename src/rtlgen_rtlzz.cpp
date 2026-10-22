@@ -80,10 +80,10 @@ LogicRTLResult appendLogicRTL(
             return error;
         }
         if (!release) vulDebugWriteMapToFile(vulDebugBuildGeneratedMap(unit.debug), path + ".dbgmap");
-        const string step = "pipeline " + unit.name + ": latency=" + std::to_string(unit.latency) + ", native RTLZZ";
+        const string step = "pipeline " + unit.name + ": latency=" + std::to_string(unit.latency) + (use_circt ? ", CIRCT" : ", native RTLZZ");
         if (progress_callback) progress_callback(step);
         else std::cerr << "[vulrtlgen] module " << module.simClassName() << ": " << step << "\n";
-        auto compiled = generateLogicRTLWithRTLzz(path, unit.top_function, lib_include_dir, unit.bindings, unroll_limit, release, false, progress_callback, unit.latency - 1, true, reset_inputs.output_reset_values, false, unit.input_valid_name, unit.output_valid_name);
+        auto compiled = generateLogicRTLWithRTLzz(path, unit.top_function, lib_include_dir, unit.bindings, unroll_limit, release, use_circt, progress_callback, unit.latency - 1, true, reset_inputs.output_reset_values, false, unit.input_valid_name, unit.output_valid_name);
         if (!compiled.ok) {
             LogicRTLResult error;
             error.ok = false;

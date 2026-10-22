@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """PIPELINE grammar, half APIs, standalone lowering, and cycle alignment."""
 from pathlib import Path
+import os
 import shutil
 import re
 import subprocess
@@ -8,6 +9,10 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'regression/pipeline'
+CIRCT_ENABLED = os.environ.get('VUL_REGRESSION_CIRCT', '1') != '0'
+BACKENDS = [('sim', 'vulsimgen'), ('rtl', 'vulrtlgen')]
+if CIRCT_ENABLED:
+    BACKENDS.append(('circt', 'vulrtlgen'))
 
 
 def run(args, cwd=ROOT, success=True):
@@ -32,12 +37,12 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
         shutil.copytree(FIXTURE, case)
         header = case/'header.uh'
         header.write_text(header.read_text().replace('CONFIG(LATENCY, 3)', f'CONFIG(LATENCY, {latency})'))
-        for backend, tool in [('sim', 'vulsimgen'), ('rtl', 'vulrtlgen')]:
+        for backend, tool in BACKENDS:
             out = base/f'{backend}{latency}'
-            generate(tool, case, out, circt=(backend == 'rtl' and latency == 2))
+            generation_log = generate(tool, case, out, circt=(backend == 'circt'))
             log = run([out/'run.sh'])
             assert f'PIPELINE PASS latency={latency}' in log, log
-            if backend == 'rtl':
+            if backend != 'sim':
                 sv = (out/'sim/top.sv').read_text()
                 assert 'begin : __vul_pipeline_transform' in sv
                 assert 'begin : __vul_pipeline_copy' in sv
@@ -53,11 +58,14 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
                 assert 'bool __vul_port_ovalid;' in pipeline_source
                 assert '__vul_value_ovalid' not in pipeline_source
                 assert not re.search(r'__vul_port_ovalid\s*=', pipeline_source)
-                assert len(re.findall(r'logic rtlzz_valid_s\d+;', sv)) == latency-1
+                if backend == 'rtl':
+                    assert len(re.findall(r'logic rtlzz_valid_s\d+;', sv)) == latency-1
+                else:
+                    assert ', CIRCT' in generation_log
                 if latency > 1:
                     assert 'always_ff' in sv
                     assert 'internal_stages=' in (out/'sim/top.sv.dbg').read_text()
-        print(f'PASS pipeline latency={latency}, sim+RTL' + (' (CIRCT ordinary logic)' if latency == 2 else ''))
+        print(f'PASS pipeline latency={latency}, sim+native' + ('+circt' if CIRCT_ENABLED else ' (CIRCT skipped)'))
 
     case = base/'negative'
     case.mkdir()
@@ -96,7 +104,9 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
         (case/'Top.vul').write_text(source)
         for tool in ('vulsimgen', 'vulrtlgen'):
             generate(tool, case, base/'bad', success=False)
-    print(f'PASS {len(invalid)} declaration diagnostics on both generators')
+        if CIRCT_ENABLED:
+            generate('vulrtlgen', case, base/'bad-circt', success=False, circt=True)
+    print(f'PASS {len(invalid)} declaration diagnostics on all backends')
 
     # Compile sim output to verify isolation without imposing RTLZZ's subset.
     invalid_logic = {
@@ -116,6 +126,8 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
         if p.returncode == 0:
             run(['g++', '-std=c++20', '-fsyntax-only', '-I'+str(out), out/'main.cpp'], success=False)
         generate('vulrtlgen', case, base/'bad-rtl', success=False)
+        if CIRCT_ENABLED:
+            generate('vulrtlgen', case, base/'bad-circt', success=False, circt=True)
     print(f'PASS {len(invalid_logic)} access isolation cases')
 
     for body in ('if (a != Int<16>(0)) b=a;', 'b=b+Int<16>(1);', 'return;'):

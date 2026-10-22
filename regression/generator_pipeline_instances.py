@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Parameterized pipeline-only child modules, coordinates, and release cleanup."""
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 
 ROOT=Path(__file__).resolve().parents[1]
+CIRCT_ENABLED = os.environ.get('VUL_REGRESSION_CIRCT', '1') != '0'
+BACKENDS = [('sim','vulsimgen'), ('native','vulrtlgen')]
+if CIRCT_ENABLED:
+    BACKENDS.append(('circt','vulrtlgen'))
 
 def run(args):
     p=subprocess.run(list(map(str,args)),cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
@@ -42,12 +47,15 @@ with tempfile.TemporaryDirectory(prefix='pipeline-instances-') as directory:
         }
     }
     ''')
-    for tool in ('vulsimgen','vulrtlgen'):
-        out=case/tool
-        run([ROOT/'build'/tool,'-m',case/'Main.utb','-f','-o',out])
+    for backend, tool in BACKENDS:
+        out=case/backend
+        flags=['--circt'] if backend=='circt' else []
+        run([ROOT/'build'/tool,'-m',case/'Main.utb','-f','-o',out,*flags])
         run([out/'run.sh'])
-    release=case/'release'
-    run([ROOT/'build/vulrtlgen','-m',case/'Main.utb','-f','--release','-o',release])
-    assert not list(release.rglob('*.pipeline_*.cpp'))
-    assert not list(release.rglob('*.dbgmap'))
-    print('PASS parameterized pipeline child instances and release cleanup')
+        if tool=='vulrtlgen':
+            release=case/(backend+'-release')
+            run([ROOT/'build'/tool,'-m',case/'Main.utb','-f','--release','-o',release,*flags])
+            assert not list(release.rglob('*.pipeline_*.cpp'))
+            assert not list(release.rglob('*.dbgmap'))
+    print('PASS parameterized pipeline child instances and release cleanup: sim+native' +
+          ('+circt' if CIRCT_ENABLED else ' (CIRCT skipped)'))

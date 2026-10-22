@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+run_circt=1
+for option in "$@"; do
+    case "$option" in
+        --no-circt) run_circt=0 ;;
+        -h|--help)
+            echo "Usage: bash regression.sh [--no-circt]"
+            echo "Build and run Python checks and each project's sim, rtl and circt simulations."
+            echo "  --no-circt  Skip all CIRCT checks, including Python regression cases."
+            exit 0
+            ;;
+        *) echo "Unknown option: $option (use --help)" >&2; exit 2 ;;
+    esac
+done
+
+if (( run_circt )) && ! command -v circt-opt >/dev/null 2>&1; then
+    echo "[regression] circt-opt not found in PATH. Configure CIRCT as described in README.md or use --no-circt." >&2
+    exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 cd "$ROOT_DIR"
@@ -39,7 +58,7 @@ for python_file in "${python_files[@]}"; do
     name="$(basename "$python_file")"
     echo
     echo "[regression] === $name ==="
-    if python3 "$python_file"; then
+    if VUL_REGRESSION_CIRCT="$run_circt" python3 "$python_file"; then
         summaries+=("PASS $name (exit=0)")
         ((passed += 1))
     else
@@ -55,10 +74,13 @@ for main_file in "${main_files[@]}"; do
     relative_main="${main_file#"$ROOT_DIR"/}"
     sim_out="build/${name}-sim"
     rtl_out="build/${name}-rtl"
+    circt_out="build/${name}-circt"
     simgen_status="not run"
     sim_status="not run"
     rtlgen_status="not run"
     rtl_status="not run"
+    circtgen_status="skipped"
+    circt_status="skipped"
 
     echo
     echo "[regression] === $name ==="
@@ -89,12 +111,30 @@ for main_file in "${main_files[@]}"; do
         rtlgen_status=$?
     fi
 
+    if (( run_circt )); then
+        circtgen_status="not run"
+        circt_status="not run"
+        echo "[regression] Generating CIRCT Verilator simulation"
+        if "$BUILD_DIR/vulrtlgen" --circt -m "$relative_main" -f -o "$circt_out"; then
+            circtgen_status=0
+            echo "[regression] Running $circt_out/run.sh"
+            if "$BUILD_DIR/$name-circt/run.sh"; then
+                circt_status=0
+            else
+                circt_status=$?
+            fi
+        else
+            circtgen_status=$?
+        fi
+    fi
+
     if [[ "$simgen_status" == 0 && "$sim_status" == 0 &&
-          "$rtlgen_status" == 0 && "$rtl_status" == 0 ]]; then
-        summaries+=("PASS $name (sim=$sim_status, rtl=$rtl_status)")
+          "$rtlgen_status" == 0 && "$rtl_status" == 0 ]] &&
+       { (( ! run_circt )) || [[ "$circtgen_status" == 0 && "$circt_status" == 0 ]]; }; then
+        summaries+=("PASS $name (sim=$sim_status, rtl=$rtl_status, circt=$circt_status)")
         ((passed += 1))
     else
-        summaries+=("FAIL $name (simgen=$simgen_status, sim=$sim_status, rtlgen=$rtlgen_status, rtl=$rtl_status)")
+        summaries+=("FAIL $name (simgen=$simgen_status, sim=$sim_status, rtlgen=$rtlgen_status, rtl=$rtl_status, circtgen=$circtgen_status, circt=$circt_status)")
         ((failed += 1))
     fi
 done

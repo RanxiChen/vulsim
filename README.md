@@ -76,6 +76,38 @@ llvm-config-18 --version
 clang-18 --version
 ```
 
+### 测试环境依赖
+
+两种 RTL 测试均需要 Verilator、C++ 编译器和 make，Python 回归需要 Python 3。Ubuntu 可在前述构建依赖之外安装：
+
+```bash
+sudo apt install python3 verilator
+```
+
+### CIRCT 后端依赖
+
+在 RTL 生成时，可以选择 CIRCT 后端来获得更优化的 Verilog 输出。依赖 PATH 环境变量中的 `circt-opt` 可执行程序。可使用已有 CIRCT 安装；或下载官方的 [Release 二进制文件 版本号 >= 1.160.0](https://github.com/llvm/circt/releases)；从源码构建请参考 [CIRCT 官方构建说明](https://circt.llvm.org/docs/GettingStarted/)。将 CIRCT 可执行文件目录加入当前 shell 的 `PATH`，例如：
+
+```bash
+# 改成实际 CIRCT 构建目录；已安装的版本也可指向其安装前缀
+export CIRCT_ROOT=/path/to/circt/build
+export PATH="$CIRCT_ROOT/bin:$PATH"
+
+command -v circt-opt
+circt-opt --version
+verilator --version
+```
+
+如需持久生效，可将上述环境设置加入自己的 shell 配置。
+
+VULC++ 的 CIRCT 后端依赖部分 CIRCT pass，在使用不同的 CIRCT 版本时，运行下面这条命令检查相关 pass 是否可用：
+
+```bash
+circt-opt --help | grep -E -- 'comb-assume-two-valued|comb-int-range-narrowing|comb-overflow-annotating|comb-balance-mux|lower-seq-compreg-ce|lower-seq-to-sv|lower-comb|hw-legalize-modules|prettify-verilog|export-verilog' | wc -l
+```
+
+输出应为 10，表示所需 pass 都可用。
+
 ## 构建
 
 初始化 git 目录与 submodule：
@@ -98,7 +130,11 @@ make -j8
 或直接在项目目录下启动构建+测试脚本：
 
 ```bash
-source regression.sh
+# 默认：构建工具，运行完整回归
+bash regression.sh
+
+# 关闭所有 CIRCT 后端的测试
+bash regression.sh --no-circt
 ```
 
 构建完成后会在 `build` 目录下生成如下文件：
@@ -140,7 +176,7 @@ source build.sh
 # -o/--out: RTL 输出目录（默认 ./rtlout）
 # -j: 并行模块生成数（默认 1）
 # -r/--release: 不保留中间 C++、调试文件和 TestMain C++ 文件
-# --circt: 通过 CIRCT HW/Comb 后端而不是原生 RTL Emitter 生成质量更好的 RTL
+# --circt: 通过 CIRCT HW/Comb/Seq 后端而不是原生 RTL Emitter 生成质量更好的 RTL
 # -f/--force: 输出目录非空时跳过确认并清空；未指定时会询问
 ls -lah rtlout
 
@@ -151,7 +187,7 @@ cd rtlout
 # 应当输出与运行 vulsimgen 生成的仿真代码相同的结果
 ```
 
-`vulrtlgen` 至少需要 `-t/--top` 或 `-m/--main` 之一；使用 `-m` 时，TestMain 中的 `TOP(...)` 可提供顶层模块路径。`-r/--release` 会省略中间文件，`--circt` 选择 CIRCT HW/Comb 后端。
+`vulrtlgen` 至少需要 `-t/--top` 或 `-m/--main` 之一；使用 `-m` 时，TestMain 中的 `TOP(...)` 可提供顶层模块路径。`-r/--release` 会省略中间文件，`--circt` 选择 CIRCT HW/Comb/Seq 后端。
 使用 `-m` 且未指定 `-r/--release` 时，输出目录会包含 Verilator C++ 驱动和 `run.sh`。运行脚本需要已安装 Verilator 与 C++ 编译器，并会构建后立即启动仿真。可从任意当前目录调用该脚本，额外参数会传递给仿真程序。Verilator 构建日志和仿真日志分别保存在 `verilator_build.log` 与 `simulation.log`；失败时脚本会显示对应日志并返回失败状态。
 
 

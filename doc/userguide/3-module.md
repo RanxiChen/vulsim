@@ -652,7 +652,7 @@ QUEUE(q, uint32_t, 8, enq_width=3, deq_width=2);
 
 普通队列默认单 enq / 单 deq。显式设置 `enq_width` 或 `deq_width` 大于 1 时表示多端口队列。
 
-## 流水线块 PIPELINE
+## 3.10 流水线块 PIPELINE
 
 `PIPELINE` 在模块实现或选定的 VERSION 中声明一个持续运行的计算流水线。其函数体只能访问输入参数、输出参数、类型、配置常量以及 header／HELPER 中的帮助函数，不能访问其他 VUL 组件或调用外部事务。
 

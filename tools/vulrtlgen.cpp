@@ -437,7 +437,7 @@ static int runVulRTLGen(int argc, char * argv[]) {
         .default_value(false)
         .implicit_value(true);
     parser.add_argument("--circt")
-        .help("emit RTL through the CIRCT HW/Comb backend")
+        .help("emit ordinary and pipeline RTL through the CIRCT HW/Comb/Seq backend")
         .default_value(false)
         .implicit_value(true);
     parser.add_argument("-f", "--force")
