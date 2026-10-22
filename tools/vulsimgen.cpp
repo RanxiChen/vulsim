@@ -94,8 +94,8 @@ int simgenStatic(const SimGenArgs &args) {
     const string &break_line = args.break_line;
 
     std::filesystem::path main_path(main_file);
-    if (!std::filesystem::exists(main_path) || !std::filesystem::is_regular_file(main_path)) {
-        throw VulException("Main file does not exist: " + main_file);
+    if (main_file.empty()) {
+        throw VulException("A .utb Main test file must be specified with -m/--main");
     }
 
     VulErrorContextGuard _err{"generating project from " + main_path.parent_path().string()};
@@ -350,14 +350,14 @@ static int runVulSimGen(int argc, char * argv[]) {
 
     argparse::ArgumentParser parser("vulsimgen", "VulSim Simulation Generator V1.0");
     parser.add_argument("-t", "--top")
-        .help("overrides the top module file path declared by TOP(...) in the main test file")
+        .help("sets a .vul top module, overriding TOP(...) in the .utb test file")
         .default_value(std::string(""));
     parser.add_argument("-m", "--main")
-        .help("sets the main test file for test case generation")
+        .help("sets the .utb main test file for test case generation")
         .default_value(std::string(""))
         .required();
     parser.add_argument("-p", "--project")
-        .help("sets the first project directory searched before Main/Top PROJECT and the Top directory")
+        .help("sets the first directory searched for header.uh or header/**/*.uh, before Main/Top PROJECT and the Top directory")
         .default_value(std::string(""));
     parser.add_argument("-o", "--out")
         .help("sets the output directory for generated code (default: ./simout)")

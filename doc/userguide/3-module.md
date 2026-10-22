@@ -115,7 +115,7 @@ VERSION(selected) {
 
 ## 3.3 Header / 类型定义
 
-以下宏既可以出现在项目 `header.hpp` / `header.h` / `header/` 中，也可以出现在模块头文件中。不同之处是：项目 header 中定义的是全局可见名字，模块头文件中定义的是模块局部名字。
+以下宏既可以出现在项目 `header.uh` / `header/` 中，也可以出现在模块文件中。不同之处是：项目 header 中定义的是全局可见名字，模块文件中定义的是模块局部名字。
 
 ### CONFIG(name, value)
 
@@ -494,7 +494,7 @@ CHILD_INSTANCE(DiagNode, mesh, dims=[HEI, WID], PARAM(WIDTH)=32);
 
 参数说明：
 
-- `module`：子模块类型名称，对应项目中的 `module.hpp` / `module.h` 等文件。
+- `module`：子模块类型名称，对应项目中的 `module.vul` 文件。
 - `name`：子实例名称。
 - `dims`：子实例数组维度。省略时为标量子实例。
 - `PARAM(param)=value`：覆盖子模块中的 `PARAMETER`。

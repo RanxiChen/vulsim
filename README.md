@@ -95,6 +95,12 @@ cmake ..
 make -j8
 ```
 
+或直接在项目目录下启动构建+测试脚本：
+
+```bash
+source regression.sh
+```
+
 构建完成后会在 `build` 目录下生成如下文件：
 - `vulsimgen`：VulCPP 仿真代码生成工具，用于将 VulCPP 项目转换为可执行的仿真代码
 - `vulrtlgen`：VulCPP RTL 代码生成工具，用于将 VulCPP 项目转换为可综合的 RTL 代码
@@ -102,11 +108,16 @@ make -j8
 - `userguide`：用户手册文档目录
 - `example`：示例代码目录
 
+<<<<<<< HEAD
 ## 运行示例：
+=======
+
+运行示例：
+>>>>>>> 69b23ec (unify vul file extensions to .vul, .utb, .uh)
 
 ```bash
 # 生成仿真代码
-./vulsimgen -m example/prodcon/Main.cpp
+./vulsimgen -m example/prodcon/Main.utb
 # -m/--main: 必需，指定 Main 测试文件
 # -t/--top: 可选，覆盖 Main 中 TOP(...) 声明的顶层模块路径
 # -p/--project: 可选，覆盖 Main 中 PROJECT(...) 声明的项目目录
@@ -127,7 +138,7 @@ source build.sh
 
 ```bash
 # 生成 RTL 代码
-./vulrtlgen -t example/prodcon/TopModule.hpp
+./vulrtlgen -t example/prodcon/TopModule.vul
 # -t/--top: 指定顶层模块文件；也可用 -m/--main 指定带 TOP(...) 的 TestMain 文件
 # -p/--project: 项目目录（默认顶层模块文件所在目录）
 # -l/--lib: 运行库目录（默认 ./vullib）
@@ -139,7 +150,7 @@ source build.sh
 ls -lah rtlout
 
 # -m/--main 非 release 模式会生成 Verilator 驱动和一键构建/运行脚本
-./vulrtlgen -m example/prodcon/Main.cpp
+./vulrtlgen -m example/prodcon/Main.utb
 cd rtlout
 ./run.sh
 # 应当输出与运行 vulsimgen 生成的仿真代码相同的结果
@@ -163,3 +174,13 @@ cd rtlout
 
 “泺”作为自然源头，代表着创新的起点，就像趵突泉为古泺水注入不竭动能，平台也为处理器研发提供源头性的性能模拟支撑；“源”也代表着处理器设计的源头，强调技术的源头开放、共享协作。“泺源”二字彰显了平台以源头创新驱动芯片技术突破的愿景，成为处理器研发领域的核心引擎。
 
+<<<<<<< HEAD
+=======
+## 致谢
+
+### 引用开源项目：
+
+- pugixml: [https://github.com/zeux/pugixml](https://github.com/zeux/pugixml)
+- json : [https://github.com/nlohmann/json](https://github.com/nlohmann/json)
+- argparse : [https://github.com/p-ranav/argparse](https://github.com/p-ranav/argparse)
+>>>>>>> 69b23ec (unify vul file extensions to .vul, .utb, .uh)

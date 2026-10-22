@@ -16,15 +16,15 @@ def run(command):
 def case(name, modules, body="sim_nextcycle();", expected_error=None, check=None, rtl=False, rtl_check=None):
     with tempfile.TemporaryDirectory(prefix=f"array-{name}-") as directory:
         path = Path(directory)
-        (path / "header.hpp").write_text("#pragma once\n#include <defhelper.hpp>\n")
+        (path / "header.uh").write_text("#pragma once\n#include <defhelper.hpp>\n")
         for filename, text in modules.items():
-            (path / filename).write_text('#include "header.hpp"\n' + text)
-        (path / "Main.cpp").write_text(
+            (path / filename).write_text('#include "header.uh"\n' + text)
+        (path / "Main.utb").write_text(
             '#include <cstdlib>\n#include <defhelper.hpp>\n#include <run.hpp>\n'
-            'TOP("./Top.hpp");\nPROJECT(".");\nQUERY(result, uint32_t);\n'
+            'TOP("./Top.vul");\nPROJECT(".");\nQUERY(result, uint32_t);\n'
             'SIMULATION() { ' + body + ' }\n'
         )
-        result = run([str(SIMGEN), "-m", str(path / "Main.cpp"), "-f", "-o", str(path / "out")])
+        result = run([str(SIMGEN), "-m", str(path / "Main.utb"), "-f", "-o", str(path / "out")])
         if expected_error:
             if result.returncode == 0 or expected_error not in result.stdout:
                 raise RuntimeError(f"{name}: expected {expected_error!r}\n{result.stdout}")
@@ -37,7 +37,7 @@ def case(name, modules, body="sim_nextcycle();", expected_error=None, check=None
             if simulated.returncode:
                 raise RuntimeError(f"{name}: simulation failed\n{simulated.stdout}")
         if rtl:
-            generated = run([str(RTLGEN), "-m", str(path / "Main.cpp"), "-f", "-o", str(path / "rtl")])
+            generated = run([str(RTLGEN), "-m", str(path / "Main.utb"), "-f", "-o", str(path / "rtl")])
             if generated.returncode:
                 raise RuntimeError(f"{name}: RTL generation failed\n{generated.stdout}")
             if rtl_check:
@@ -79,12 +79,12 @@ def rtl_names_check(out, log):
 
 
 case("five-names", {
-    "Top.hpp": '''CHILD_INSTANCE(PE, arr1, dims=[8]); CHILD_INSTANCE(PE, arr2, dims=[4]); QUERY(result, uint32_t) { return 0; }''',
-    "PE.hpp": "CHILD_INSTANCE(FPU, fpu);",
-    "FPU.hpp": "REGISTER(value, uint32_t);",
+    "Top.vul": '''CHILD_INSTANCE(PE, arr1, dims=[8]); CHILD_INSTANCE(PE, arr2, dims=[4]); QUERY(result, uint32_t) { return 0; }''',
+    "PE.vul": "CHILD_INSTANCE(FPU, fpu);",
+    "FPU.vul": "REGISTER(value, uint32_t);",
 }, check=names_check, rtl=True, rtl_check=rtl_names_check)
 
-base = {"PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); PARAMETER(COL, 5); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW*10+COL; }"}
+base = {"PE.vul": "INTERFACE() { PARAMETER(ROW, 3); PARAMETER(COL, 5); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW*10+COL; }"}
 for name, decl, error in [
     ("scalar-binding", "PARAM(ROW)=COORD(0)", "COORD dimension out of range"),
     ("out-of-range", "dims=[2], PARAM(ROW)=COORD(1)", "COORD dimension out of range"),
@@ -94,43 +94,43 @@ for name, decl, error in [
     ("override-after", "dims=[2], PARAM(ROW)=COORD(0), PARAM(ROW)=7", "specified more than once"),
     ("override-before", "dims=[2], PARAM(ROW)=7, PARAM(ROW)=COORD(0)", "specified more than once"),
 ]:
-    case(name, dict(base, **{"Top.hpp": f"CHILD_INSTANCE(PE, a, {decl}); QUERY(result, uint32_t) {{ return 0; }}"}), expected_error=error)
+    case(name, dict(base, **{"Top.vul": f"CHILD_INSTANCE(PE, a, {decl}); QUERY(result, uint32_t) {{ return 0; }}"}), expected_error=error)
 
-case("dimension-expression-binding", dict(base, **{"Top.hpp": """
+case("dimension-expression-binding", dict(base, **{"Top.vul": """
 CHILD_INSTANCE(PE, a, dims=[2], PARAM( ROW )=COORD(clog2(2)-1));
 USE_CHILD_QUERY(a[1], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 """}), body="if (result() != 15) std::exit(1); sim_nextcycle();", rtl=True)
 
-case("partial-binding", dict(base, **{"Top.hpp": '''
+case("partial-binding", dict(base, **{"Top.vul": '''
 CHILD_INSTANCE(PE, a, dims=[2,3], PARAM(COL)=COORD(1));
 USE_CHILD_QUERY(a[1][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 32) std::exit(1); sim_nextcycle(); if (result() != 32) std::exit(2);")
 
-case("explicit-shape-binding", dict(base, **{"Top.hpp": '''
+case("explicit-shape-binding", dict(base, **{"Top.vul": '''
 CHILD_INSTANCE(PE, a, dims=[1, 3], PARAM(COL)=COORD(1));
 USE_CHILD_QUERY(a[0][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 32) std::exit(1); sim_nextcycle();")
 
-case("full-non-square-binding", dict(base, **{"Top.hpp": '''
+case("full-non-square-binding", dict(base, **{"Top.vul": '''
 CHILD_INSTANCE(PE, a, dims=[2,3], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(1));
 USE_CHILD_QUERY(a[1][2], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }
 '''}), body="if (result() != 12) std::exit(1); sim_nextcycle(); if (result() != 12) std::exit(2);", rtl=True)
 
 case("nested-structure", {
-    "Top.hpp": '''CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0));
+    "Top.vul": '''CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0));
 USE_CHILD_QUERY(a[1], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }''',
-    "PE.hpp": '''INTERFACE() { PARAMETER(ROW, 9);
+    "PE.vul": '''INTERFACE() { PARAMETER(ROW, 9);
     QUERY(result, uint32_t);
 }
 CHILD_INSTANCE(FPU, fpu, dims=[ROW+1], PARAM(TAG)=ROW+7);
 USE_CHILD_QUERY(fpu[ROW], result, child_result, uint32_t);
 QUERY(result, uint32_t) { return child_result(); }''',
-    "FPU.hpp": '''INTERFACE() { PARAMETER(TAG, 2); PARAMETER(NEXT, TAG+1);
+    "FPU.vul": '''INTERFACE() { PARAMETER(TAG, 2); PARAMETER(NEXT, TAG+1);
     QUERY(result, uint32_t);
 }
 REGISTER(value, Int<NEXT>) { value = TAG; }
@@ -138,92 +138,92 @@ QUERY(result, uint32_t) { return value.get().to<uint32_t>() + NEXT*100; }''',
 }, body="if (result() != 908) std::exit(1); sim_nextcycle(); if (result() != 908) std::exit(2);", rtl=True)
 
 case("registered-chain", {
-    "Top.hpp": '''CHILD_INSTANCE(Node, lane, dims=[3]);
+    "Top.vul": '''CHILD_INSTANCE(Node, lane, dims=[3]);
 CONNECT_CR_CS(lane[$], send, lane[$+1], receive);
 CONNECT_CR_S(lane[2], send, finish);
 SERVICE(finish, ARG(uint32_t) value) { }
 QUERY(result, uint32_t) { return 0; }''',
-    "Node.hpp": '''REQUEST(send, ARG(uint32_t) value); REGISTER(value, uint32_t);
+    "Node.vul": '''REQUEST(send, ARG(uint32_t) value); REGISTER(value, uint32_t);
 SERVICE(receive, ARG(uint32_t) data) { value.setnext(data); }
 TICK_IMPL() { send(value.get()+1); }''',
 })
 
 case("true-array-cycle", {
-    "Top.hpp": '''CHILD_INSTANCE(Node, lane, dims=[2]);
+    "Top.vul": '''CHILD_INSTANCE(Node, lane, dims=[2]);
 CONNECT_CR_CS(lane[$], send, lane[1-$], receive);
 USE_CHILD_SERVICE(lane[0], receive, enter);
 TICK_IMPL() { enter(); } QUERY(result, uint32_t) { return 0; }''',
-    "Node.hpp": "REQUEST(send); SERVICE(receive) { send(); }",
+    "Node.vul": "REQUEST(send); SERVICE(receive) { send(); }",
 }, expected_error="Cyclic call")
 
 case("array-multiple-sources", {
-    "Top.hpp": '''CHILD_INSTANCE(Node, lane, dims=[2]); CHILD_INSTANCE(Sink, sink);
+    "Top.vul": '''CHILD_INSTANCE(Node, lane, dims=[2]); CHILD_INSTANCE(Sink, sink);
 CONNECT_CR_CS(lane[$], send, sink, receive); QUERY(result, uint32_t) { return 0; }''',
-    "Node.hpp": "REQUEST(send); TICK_IMPL() { send(); }",
-    "Sink.hpp": "SERVICE(receive) { }",
+    "Node.vul": "REQUEST(send); TICK_IMPL() { send(); }",
+    "Sink.vul": "SERVICE(receive) { }",
 }, expected_error="called by multiple instances")
 
 case("array-priority", {
-    "Top.hpp": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
+    "Top.vul": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
 CHILD_INSTANCE(Node, lane, dims=[2], PARAM(ROLE)=COORD(0));
 CONNECT_CR_S(lane[1], high, high); CONNECT_CR_S(lane[0], low, low);
 SERVICE(high, priority=20) { value = 7; }
 SERVICE(low, priority=-20) { saved.setnext(value); }
 TICK_IMPL() { value = value+10; }
 QUERY(result, uint32_t) { return saved.get(); }''',
-    "Node.hpp": '''INTERFACE() { PARAMETER(ROLE, 0); REQUEST(high); REQUEST(low); }
+    "Node.vul": '''INTERFACE() { PARAMETER(ROLE, 0); REQUEST(high); REQUEST(low); }
 TICK_IMPL() { if constexpr (ROLE == 1) high(); else low(); }''',
 }, expected_error="is not connected")
 # Each declared request still needs a connection, even when its call is statically inactive.
 case("array-priority-connected", {
-    "Top.hpp": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
+    "Top.vul": '''WIRE(value, uint32_t) { value = 0; } REGISTER(saved, uint32_t);
 CHILD_INSTANCE(Node, lane, dims=[2], PARAM(ROLE)=COORD(0));
 CONNECT_CR_S(lane[*], high, high); CONNECT_CR_S(lane[*], low, low);
 SERVICE(high, dims=[2], priority=20) { value = 7; }
 SERVICE(low, dims=[2], priority=-20) { saved.setnext(value); }
 TICK_IMPL() { value = value+10; }
 QUERY(result, uint32_t) { return saved.get(); }''',
-    "Node.hpp": '''INTERFACE() { PARAMETER(ROLE, 0); REQUEST(high); REQUEST(low); }
+    "Node.vul": '''INTERFACE() { PARAMETER(ROLE, 0); REQUEST(high); REQUEST(low); }
 TICK_IMPL() { if constexpr (ROLE == 1) high(); else low(); }''',
 }, body="sim_nextcycle(); if (result() != 17) std::exit(1);", rtl=True)
 
 case("no-user-parameter-leak", {
-    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu); USE_CHILD_QUERY(fpu, result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
-    "FPU.hpp": "INTERFACE() { PARAMETER(ROW, 99); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW; }",
+    "Top.vul": "CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
+    "PE.vul": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu); USE_CHILD_QUERY(fpu, result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
+    "FPU.vul": "INTERFACE() { PARAMETER(ROW, 99); \n    QUERY(result, uint32_t);\n} QUERY(result, uint32_t) { return ROW; }",
 }, body="if (result() != 99) std::exit(1); sim_nextcycle();", rtl=True)
 
 case("internal-coordinate-reference", {
-    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2]); QUERY(result, uint32_t) { return 0; }",
-    "PE.hpp": "QUERY(result, uint32_t) { return __vul_idx_0; }",
+    "Top.vul": "CHILD_INSTANCE(PE, a, dims=[2]); QUERY(result, uint32_t) { return 0; }",
+    "PE.vul": "QUERY(result, uint32_t) { return __vul_idx_0; }",
 }, expected_error="not a user API")
 
 case("coordinate-dependent-query-width", {
-    "Top.hpp": "CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+1); USE_CHILD_QUERY(fpu, result, child, Int<ROW+1>); QUERY(result, uint32_t) { return child().to<uint32_t>(); }",
-    "FPU.hpp": "INTERFACE() { PARAMETER(WIDTH, 9); \n    QUERY(result, Int<WIDTH>);\n} REGISTER(value, Int<WIDTH>) { value = 1; } QUERY(result, Int<WIDTH>) { return value.get(); }",
+    "Top.vul": "CHILD_INSTANCE(PE, a, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(a[1], result, child, uint32_t); QUERY(result, uint32_t) { return child(); }",
+    "PE.vul": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, uint32_t);\n} CHILD_INSTANCE(FPU, fpu, PARAM(WIDTH)=ROW+1); USE_CHILD_QUERY(fpu, result, child, Int<ROW+1>); QUERY(result, uint32_t) { return child().to<uint32_t>(); }",
+    "FPU.vul": "INTERFACE() { PARAMETER(WIDTH, 9); \n    QUERY(result, Int<WIDTH>);\n} REGISTER(value, Int<WIDTH>) { value = 1; } QUERY(result, Int<WIDTH>) { return value.get(); }",
 }, body="if (result() != 1) std::exit(1); sim_nextcycle(); if (result() != 1) std::exit(2);", rtl=True)
 
 case("comparison-in-call-index", {
-    "Top.hpp": "REGISTER(saved, uint32_t); CHILD_INSTANCE(Node, n, PARAM(ROLE)=1); CONNECT_CR_S(n, send, capture); SERVICE(capture, dims=[2], ARG(uint32_t) data) { if constexpr (IDX == 1) { saved.setnext(data); } } QUERY(result, uint32_t) { return saved.get(); }",
-    "Node.hpp": "INTERFACE() { PARAMETER(ROLE, 0); REQUEST(send, dims=[2], ARG(uint32_t) data); } TICK_IMPL() { send<((ROLE > 0) ? 1 : 0)>(9); }",
+    "Top.vul": "REGISTER(saved, uint32_t); CHILD_INSTANCE(Node, n, PARAM(ROLE)=1); CONNECT_CR_S(n, send, capture); SERVICE(capture, dims=[2], ARG(uint32_t) data) { if constexpr (IDX == 1) { saved.setnext(data); } } QUERY(result, uint32_t) { return saved.get(); }",
+    "Node.vul": "INTERFACE() { PARAMETER(ROLE, 0); REQUEST(send, dims=[2], ARG(uint32_t) data); } TICK_IMPL() { send<((ROLE > 0) ? 1 : 0)>(9); }",
 }, body="sim_nextcycle(); if (result() != 9) std::exit(1);", rtl=True)
 
 case("concrete-name-collision", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[1], PARAM(ROW)=COORD(0)); CHILD_INSTANCE(PE, arr__0, PARAM(ROW)=7); USE_CHILD_QUERY(arr[0], result, first, uint32_t); USE_CHILD_QUERY(arr__0, result, second, uint32_t); QUERY(result, uint32_t) { return first()+second()*100; }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 3); \n    QUERY(result, uint32_t);\n} REGISTER(value, uint32_t) { value = ROW+1; } QUERY(result, uint32_t) { return value.get(); }",
+    "Top.vul": "CHILD_INSTANCE(PE, arr, dims=[1], PARAM(ROW)=COORD(0)); CHILD_INSTANCE(PE, arr__0, PARAM(ROW)=7); USE_CHILD_QUERY(arr[0], result, first, uint32_t); USE_CHILD_QUERY(arr__0, result, second, uint32_t); QUERY(result, uint32_t) { return first()+second()*100; }",
+    "PE.vul": "INTERFACE() { PARAMETER(ROW, 3); \n    QUERY(result, uint32_t);\n} REGISTER(value, uint32_t) { value = ROW+1; } QUERY(result, uint32_t) { return value.get(); }",
 }, body="if (result() != 801) std::exit(1); sim_nextcycle(); if (result() != 801) std::exit(2);", rtl=True)
 
 case("ignore-constexpr-in-literal", {
-    "Top.hpp": 'QUERY(result, uint32_t) { return 0; } TICK_IMPL() { const char* text = "if constexpr (unknown) call();"; }',
+    "Top.vul": 'QUERY(result, uint32_t) { return 0; } TICK_IMPL() { const char* text = "if constexpr (unknown) call();"; }',
 })
 
 case("query-alias-later-coordinate-mismatch", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(arr[*], result, child, Int<1>); QUERY(result, uint32_t) { return child()[0].to<uint32_t>(); }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, Int<ROW+1>);\n} QUERY(result, Int<ROW+1>) { return 0; }",
+    "Top.vul": "CHILD_INSTANCE(PE, arr, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_QUERY(arr[*], result, child, Int<1>); QUERY(result, uint32_t) { return child()[0].to<uint32_t>(); }",
+    "PE.vul": "INTERFACE() { PARAMETER(ROW, 0); \n    QUERY(result, Int<ROW+1>);\n} QUERY(result, Int<ROW+1>) { return 0; }",
 }, expected_error="USE_CHILD_QUERY return type mismatch")
 
 case("service-alias-later-coordinate-mismatch", {
-    "Top.hpp": "CHILD_INSTANCE(PE, arr, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_SERVICE(arr[*], load, child); QUERY(result, uint32_t) { return 0; }",
-    "PE.hpp": "INTERFACE() { PARAMETER(ROW, 0); SERVICE(load, ARG(Int<ROW+1>) value); } SERVICE(load, ARG(Int<ROW+1>) value) { }",
+    "Top.vul": "CHILD_INSTANCE(PE, arr, dims=[2], PARAM(ROW)=COORD(0)); USE_CHILD_SERVICE(arr[*], load, child); QUERY(result, uint32_t) { return 0; }",
+    "PE.vul": "INTERFACE() { PARAMETER(ROW, 0); SERVICE(load, ARG(Int<ROW+1>) value); } SERVICE(load, ARG(Int<ROW+1>) value) { }",
 }, expected_error="USE_CHILD_SERVICE signature mismatch")

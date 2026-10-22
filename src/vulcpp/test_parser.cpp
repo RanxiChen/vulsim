@@ -17,6 +17,7 @@
 #include "common.hpp"
 #include "declaration_args.hpp"
 #include "test_handlers.hpp"
+#include "source_files.hpp"
 #include "../cppparse.hpp"
 #include "../stringop.hpp"
 #include "../vullib.hpp"
@@ -29,6 +30,7 @@ VulStaticTestHarnessModule parseTestModule(
     const VulStaticConfigLib &config_lib,
     const VulStaticBundleLib &bundle_lib
 ) {
+    vulsource::requireExtension(test_filepath, vulsource::TestExtension, "Test Main");
     VCPPTestContext context;
     context.config_lib = config_lib;
     context.bundle_lib = bundle_lib;
@@ -47,15 +49,23 @@ VulStaticTestHarnessModule parseTestModule(
         if (line.rfind(prefix, 0) != 0) {
             continue;
         }
-        size_t first_quote = line.find('<');
+        size_t first_quote = line.find_first_of("\"<", prefix.size());
         if (first_quote == string::npos) {
             continue;
         }
-        size_t second_quote = line.find('>', first_quote + 1);
+        const bool angled = line[first_quote] == '<';
+        size_t second_quote = line.find(angled ? '>' : '"', first_quote + 1);
         if (second_quote == string::npos || second_quote <= first_quote + 1) {
             continue;
         }
         string included_path = trim(line.substr(first_quote + 1, second_quote - first_quote - 1));
+        if (vulsource::isVulInclude(included_path)) {
+            continue;
+        }
+        // Quoted C++ headers retain the existing behavior (not propagated).
+        if (!angled) {
+            continue;
+        }
         bool escaped = false;
         for (auto s : VulLibFiles) {
             if (included_path == s) {
@@ -85,6 +95,7 @@ VulStaticTestHarnessModule parseTestModule(
 }
 
 std::pair<string, string> scanTestModuleBindingPaths(const string &test_filepath) {
+    vulsource::requireExtension(test_filepath, vulsource::TestExtension, "Test Main");
     vector<string> code_lines = readFileLines(test_filepath);
     auto stripped = stripComments(code_lines);
     VCPPTestContext context;

@@ -1,5 +1,7 @@
 # src 代码索引
 
+VUL 用户源码：全局定义 `.uh`（`header.uh` 或 `header/**/*.uh`）、模块 `.vul`、测试 `.utb`；旧输入扩展名已移除。搜索用户源码时显式使用 `rg -g '*.uh' -g '*.vul' -g '*.utb'`。本索引中的工具实现及生成的真实 C++ 文件继续使用 `.h/.hpp/.cpp`。
+
 核心流程：`vulcpp/` 解析工程 → `module/` 静态化与调度 → `simgen/` 或 `rtlgen/` 生成代码。`cppparse/` 提供源码扫描；`instance_graph` 与 `port_shape` 由分析、验证和生成器共享。根目录头文件保留公共接口，子目录中的 `detail.hpp` 仅供内部实现使用。
 
 ## src/apiinline/apiinline.cpp
@@ -519,3 +521,13 @@ RTL 与仿真继续共用现有 bundle 生成接口，没有新增公共生成�
 ## tools/vulrtlgen.cpp
 
 **文件功能**：RTL 生成命令行入口；实现去重签名包含流水线端点、延迟、源码与复位配置，保存各独立编译单元的调试产物，release 清理覆盖全部产物。
+
+
+## src/vulcpp/source_files.hpp
+
+**文件功能**：集中定义 `.uh/.vul/.utb`、大小写敏感的角色校验、旧头文件识别及 VUL include 分类。工程入口和低层模块／测试解析入口均在读取内容前校验文件角色。
+
+- `project_parser.cpp` 只收集 `.uh` 和递归搜索同名 `.vul`；旧 header 报迁移错误，旧模块仅用于缺失文件诊断。
+- `test_parser.cpp` 过滤引号／尖括号中的 VUL include，避免带路径的 `.uh` 等进入生成 C++。
+- `regression/generator_source_extensions.py` 验证新后缀、角色错误、include、生成链路、debug map 和发布副本；`regression/generator_project_paths.py` 验证公共解析入口、全局 header 依赖及工程路径规则。
+- `doc/migrations/vul-extensions-files.tsv` 保存全部静态 VUL 文件的旧／新路径；`doc/migrations/vul-extensions.md` 记录迁移边界、审计和验证结果。

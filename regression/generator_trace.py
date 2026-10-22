@@ -80,8 +80,8 @@ def expected_values(width, coordinate=0):
 def generated_case(directory, name, matcher):
     case = directory / name
     case.mkdir()
-    (case / "header.hpp").write_text("#pragma once\n#include <defhelper.hpp>\n")
-    top = '#include "header.hpp"\n'
+    (case / "header.uh").write_text("#pragma once\n#include <defhelper.hpp>\n")
+    top = '#include "header.uh"\n'
     for width in WIDTHS:
         top += f"REGISTER(value{width}, Int<{width}>) {{\n"
         top += assignments(f"value{width}", width, RESET_LOW) + "}\n"
@@ -93,23 +93,23 @@ def generated_case(directory, name, matcher):
         top += assignments(f"next{width}", width, UPDATE_LOW, middle=True) + "}\n"
         top += f"value{width}.setnext(next{width});\n"
     top += "write_lane<0>(mode); write_lane<1>(mode);\n}\n"
-    (case / "Top.hpp").write_text(top)
-    node = '#include "header.hpp"\nINTERFACE() { PARAMETER(ROLE, 0); SERVICE(write, ARG(uint32_t) mode); }\n'
+    (case / "Top.vul").write_text(top)
+    node = '#include "header.uh"\nINTERFACE() { PARAMETER(ROLE, 0); SERVICE(write, ARG(uint32_t) mode); }\n'
     node += "REGISTER(value, Int<80>) {\n"
     node += assignments("value", 80, RESET_LOW).replace(f"{RESET_LOW}ULL", f"({RESET_LOW}ULL + ROLE)") + "}\n"
     node += "SERVICE(write, ARG(uint32_t) mode) { Int<80> next{}; if (mode == 1) {\n"
     node += assignments("next", 80, UPDATE_LOW, middle=True).replace(f"{UPDATE_LOW}ULL", f"({UPDATE_LOW}ULL + ROLE)")
     node += "} value.setnext(next); }\n"
-    (case / "Node.hpp").write_text(node)
-    (case / "Main.cpp").write_text(
+    (case / "Node.vul").write_text(node)
+    (case / "Main.utb").write_text(
         '#include <defhelper.hpp>\n#include <run.hpp>\n'
-        'TOP("./Top.hpp");\nPROJECT(".");\n'
+        'TOP("./Top.vul");\nPROJECT(".");\n'
         'REQUEST(write, ARG(uint32_t) mode);\n'
         'SIMULATION() { sim_nextcycle(); write(1); sim_nextcycle(); '
         'write(2); sim_nextcycle(); sim_reset(); sim_nextcycle(); }\n'
     )
     out = case / "out"
-    command = [str(SIMGEN), "-m", str(case / "Main.cpp"), "-f", "-o", str(out)]
+    command = [str(SIMGEN), "-m", str(case / "Main.utb"), "-f", "-o", str(out)]
     if matcher:
         command += ["--trace", matcher]
     run(command)

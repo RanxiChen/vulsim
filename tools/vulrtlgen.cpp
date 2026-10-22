@@ -415,10 +415,10 @@ static int runVulRTLGen(int argc, char * argv[]) {
 
     argparse::ArgumentParser parser("vulrtlgen", "Vul RTL Generator");
     parser.add_argument("-t", "--top")
-        .help("sets the top module file")
+        .help("sets the .vul top module file")
         .default_value(std::string(""));
     parser.add_argument("-m", "--main")
-        .help("sets the TestMain file used to generate a Verilator main cpp")
+        .help("sets the .utb TestMain file used to generate a Verilator main cpp")
         .default_value(std::string(""));
     parser.add_argument("-o", "--out")
         .help("sets the output directory for generated code (default: ./rtlout)")
@@ -427,7 +427,7 @@ static int runVulRTLGen(int argc, char * argv[]) {
         .help("sets the directory for runtime library files (default: ./vullib)")
         .default_value(std::string("./vullib"));
     parser.add_argument("-p", "--project")
-        .help("sets the first project directory searched before Main/Top PROJECT and the Top directory")
+        .help("sets the first directory searched for header.uh or header/**/*.uh, before Main/Top PROJECT and the Top directory")
         .default_value(std::string(""));
     parser.add_argument("-j")
         .help("maximum concurrent module processes (default: 1)")
@@ -465,18 +465,6 @@ static int runVulRTLGen(int argc, char * argv[]) {
     if (top_file.empty() && main_file.empty()) {
         std::cerr << "Error: Specify -t/--top, -m/--main, or a TestMain with TOP(...)." << std::endl;
         return 1;
-    }
-    std::filesystem::path top_path(top_file);
-    if (!top_file.empty() && (!std::filesystem::exists(top_path) || !std::filesystem::is_regular_file(top_path))) {
-        std::cerr << "Error: Top module file does not exist: " << top_file << std::endl;
-        return 1;
-    }
-    if (!main_file.empty()) {
-        std::filesystem::path main_path(main_file);
-        if (!std::filesystem::exists(main_path) || !std::filesystem::is_regular_file(main_path)) {
-            std::cerr << "Error: TestMain file does not exist: " << main_file << std::endl;
-            return 1;
-        }
     }
     VulErrorContextGuard _err{"generating project from " + proj_dir};
     VulStaticProject project = parseVcppStaticProject(proj_dir, top_file, main_file);

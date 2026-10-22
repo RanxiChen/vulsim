@@ -4,16 +4,18 @@
 
 优先遵守本表；需要细节再查其他 md 文件或示例项目。
 
+VUL 源文件只使用 `.uh/.vul/.utb`（小写）。搜索时使用 `rg -g '*.uh' -g '*.vul' -g '*.utb'`，不要仅使用 C++ 文件类型过滤。工具源码、运行时及生成代码仍是 C++，保留原扩展名。
+
 ## 1. 项目与文件
 
 - VulCPP 用 C++ 宏描述周期同步硬件行为；普通模块必须近似可综合：无 I/O、无动态分配、无运行期全局状态、无指针算术。Main 是仿真入口，可用标准库、I/O、全局变量和测试逻辑。
-- 常见文件：项目根 `header/` 目录放全局类型/常量；兼容旧式根目录 `header.hpp`/`header.h` 单文件；每个硬件模块一个同名 `.hpp`；一个或多个 `Main.cpp` 做仿真/单测。
+- 常见文件：项目根 `header/` 目录放全局类型/常量；或在根目录使用 `header.uh` 单文件；每个硬件模块一个同名 `.vul`；一个或多个 `Main.utb` 做仿真/单测。
 - 普通模块通常写：
 
 ```cpp
 #pragma once
 #include <defhelper.hpp>
-#include "header.hpp"
+#include "header.uh"
 ```
 
 - Main 通常写：
@@ -21,17 +23,17 @@
 ```cpp
 #include <defhelper.hpp>
 #include <run.hpp>
-#include "header.hpp"
-TOP("./Top.hpp");
+#include "header.uh"
+TOP("./Top.vul");
 PROJECT(".");
 ```
 
-- `TOP(path)` 指顶层硬件模块；`PROJECT(path)` 指项目根，也可在模块实现文件顶层声明一次，相对路径基于该文件目录。若 Main 已声明，`vulsimgen -m Main.cpp` 即可；可用 `-t/-p/-l/-o` 覆盖。
+- `TOP(path)` 指顶层硬件模块；`PROJECT(path)` 指项目根，也可在模块实现文件顶层声明一次，相对路径基于该文件目录。若 Main 已声明，`vulsimgen -m Main.utb` 即可；可用 `-t/-p/-l/-o` 覆盖。
 
 ## 2. header 与局部定义
 
-- 按 `-p/--project` → Main 中的 `PROJECT`（如有）→ Top 模块文件中的 `PROJECT` → Top 文件所在目录的优先级查找项目 header。命令行相对路径基于当前工作目录，`PROJECT` 相对路径基于声明所在文件的目录。路径不存在、没有 header 或 `header/` 内没有 `.h/.hpp` 时继续尝试下一项；全部未找到时输出警告并跳过 header 解析。已找到的 header 若存在形式冲突、循环 include 或声明错误，仍然报错。最终选中的项目目录也用于子模块查找和资源复制；全部未找到 header 时使用最高优先级的已有目录。
-- 候选项目根的 `header/` 和 `header.hpp`/`header.h` 不能同时存在。`header/` 中所有 `.h/.hpp` 按 `#include` 拓扑排序解析，被 include 者先解析；循环报错。
+- 按 `-p/--project` → Main 中的 `PROJECT`（如有）→ Top 模块文件中的 `PROJECT` → Top 文件所在目录的优先级查找项目 header。命令行相对路径基于当前工作目录，`PROJECT` 相对路径基于声明所在文件的目录。路径不存在、没有 header 或 `header/` 内没有 `.uh` 时继续尝试下一项；全部未找到时输出警告并跳过 header 解析。已找到的 header 若存在形式冲突、循环 include 或声明错误，仍然报错。最终选中的项目目录也用于子模块查找和资源复制；全部未找到 header 时使用最高优先级的已有目录。
+- 候选项目根的 `header/` 和 `header.uh` 不能同时存在。`header/` 中所有 `.uh` 按 `#include` 拓扑排序解析，被 include 者先解析；循环报错。
 - 项目级 header 只放全局共享定义：`CONFIG`、`STRUCT`、`ENUM`、`ALIAS`、`HELPER`。这些定义对所有模块可见，即使模块没有 include 它。
 - 全局 `CONFIG` 和 bundle（`STRUCT/ENUM/ALIAS*`）共用同一命名域，不允许重名或覆盖。
 - 硬件模块/Main 内也可写这些宏，但只作为模块局部定义。
@@ -227,7 +229,7 @@ reg.setnext(n);
 
 ## 12. 最小模板
 
-`header.hpp`
+`header.uh`
 
 ```cpp
 #pragma once
@@ -240,12 +242,12 @@ STRUCT(Packet) {
 };
 ```
 
-`Top.hpp`
+`Top.vul`
 
 ```cpp
 #pragma once
 #include <defhelper.hpp>
-#include "header.hpp"
+#include "header.uh"
 
 REGISTER(cnt, Int<W>) { cnt = 0; }
 REQUEST(out, ARG(Int<W>) value);
@@ -259,15 +261,15 @@ TICK_IMPL() {
 }
 ```
 
-`Main.cpp`
+`Main.utb`
 
 ```cpp
 #include <cstdio>
 #include <defhelper.hpp>
 #include <run.hpp>
-#include "header.hpp"
+#include "header.uh"
 
-TOP("./Top.hpp");
+TOP("./Top.vul");
 PROJECT(".");
 
 GLOBAL() { uint64_t cycle = 0; }

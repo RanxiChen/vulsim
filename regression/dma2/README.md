@@ -5,9 +5,9 @@
 单独执行：
 
 ```sh
-build/vulsimgen -m regression/dma2/Main.cpp -f -o build/dma2-sim
+build/vulsimgen -m regression/dma2/Main.utb -f -o build/dma2-sim
 build/dma2-sim/run.sh
-build/vulrtlgen -m regression/dma2/Main.cpp -f -o build/dma2-rtl
+build/vulrtlgen -m regression/dma2/Main.utb -f -o build/dma2-rtl
 build/dma2-rtl/run.sh
 ```
 

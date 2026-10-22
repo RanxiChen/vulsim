@@ -23,10 +23,7 @@ VulCPP 是一个基于 C++ 的硬件描述框架，旨在提供一种高效、�
 我们使用一个简单的 Producer-Consumer 模块来说明这些概念：
 
 ```cpp
-// <Pruducer.hpp>
-
-// include 帮助头文件以使能文件内语法检查和代码提示
-#include <defhelper.hpp>
+// <Producer.vul>
 
 // 定义 Producer 模块中的两个寄存器
 REGISTER(cycle, uint8_t); // cycle 寄存器，默认复位值为 0
@@ -46,9 +43,7 @@ TICK_IMPL() {
 ```
 
 ```cpp
-// <Consumer.hpp>
-
-#include <defhelper.hpp>
+// <Consumer.vul>
 
 // 定义 Consumer 模块中的寄存器
 REGISTER(cycle, uint8_t);
@@ -72,9 +67,7 @@ TICK_IMPL() {
 ```
 
 ```cpp
-// <TopModule.hpp>
-
-#include <defhelper.hpp>
+// <TopModule.vul>
 
 // 定义 Top 模块对外的事务接口
 REQUEST_PORT(output, void, ARG(uint8_t) s);
@@ -107,12 +100,9 @@ CONNECT_CR_R(cons, output, output); // 连接 cons 模块的 output 事务接口
 一个可运行的 VulCPP 项目必须包含一个 **顶层硬件设计模块** 和一个 **Main 模块**。在上述的例子中，`TopModule` 可以作为顶层硬件设计模块，而 `Main` 模块则是仿真入口模块：
 
 ```cpp
-// <Main.cpp>
+// <Main.utb>
 
-#include <defhelper.hpp>
-#include <run.hpp> // 专用于 Main 模块的帮助头文件
-
-TOP("TopModule.hpp") // 声明 Main 模块绑定的顶层模块文件是 ./TopModule.hpp
+TOP("TopModule.vul") // 声明 Main 模块绑定的顶层模块文件是 ./TopModule.vul
 PROJECT(".") // 声明项目根目录
 
 // 定义一个全局变量 tick_count 来跟踪仿真的时钟周期数
@@ -155,11 +145,11 @@ QUERY(status, Status);
 
 在代码仓库中提供了上述的示例代码，位于 `example/prodcon` 目录下。假定现在已经在 `build` 目录下完成了工具的编译，我们可以使用以下命令来构建和运行仿真：
 
-如果 `Main.cpp` 中已经通过 `TOP(...)` / `PROJECT(...)` 声明了绑定的顶层模块和项目目录，那么只需要传入 `-m`；如果没有声明，或者想临时切换目标，也可以继续使用 `-t` / `-p` 进行覆盖。
+如果 `Main.utb` 中已经通过 `TOP(...)` / `PROJECT(...)` 声明了绑定的顶层模块和项目目录，那么只需要传入 `-m`；如果没有声明，或者想临时切换目标，也可以继续使用 `-t` / `-p` 进行覆盖。
 
 ```bash
 # 生成仿真代码
-./vulsimgen -m example/prodcon/Main.cpp
+./vulsimgen -m example/prodcon/Main.utb
 # -m/--main: 必需，指定 Main 测试文件
 # -t/--top: 可选，覆盖 Main 中 TOP(...) 声明的顶层模块路径
 # -p/--project: 可选，优先查找此目录的 header，再尝试 Main/Top PROJECT 和 Top 所在目录
@@ -175,7 +165,7 @@ source build.sh
 ./Main
 ```
 
-生成器还支持 `-T/--tracefile` 或 `--trace` 指定追踪信号，`-B/--breakfile` 或 `--break` 指定断点；断点需要同时启用追踪。若输出目录非空，默认会询问是否清空，传入 `-f/--force` 可跳过询问并清空。`build.sh` 生成的可执行文件名是 Main 测试文件的基本名（例如 `Main.cpp` 对应 `Main`）。
+生成器还支持 `-T/--tracefile` 或 `--trace` 指定追踪信号，`-B/--breakfile` 或 `--break` 指定断点；断点需要同时启用追踪。若输出目录非空，默认会询问是否清空，传入 `-f/--force` 可跳过询问并清空。`build.sh` 生成的可执行文件名是 Main 测试文件的基本名（例如 `Main.utb` 对应 `Main`）。
 
 ## 1.4. 后续
 

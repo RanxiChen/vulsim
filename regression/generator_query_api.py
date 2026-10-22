@@ -69,7 +69,7 @@ VERSION(selected) {
 '''
 MAIN = '''#include <cstdlib>
 #include <run.hpp>
-TOP("Top.hpp"); PROJECT(".");
+TOP("Top.vul"); PROJECT(".");
 QUERY(grid, ScalarGrid); QUERY(packets, PacketGrid);
 QUERY(row, PacketRow); QUERY(column, PacketColumn);
 QUERY(pairs, PairGrid); QUERY(cell, Packet); QUERY(single, SingleScalar);
@@ -98,12 +98,12 @@ SIMULATION() {
 '''
 
 def invoke(tool, path, output):
-    return subprocess.run([str(ROOT / 'build' / tool), '-m', str(path / 'Main.cpp'), '-f', '-o', str(output)],
+    return subprocess.run([str(ROOT / 'build' / tool), '-m', str(path / 'Main.utb'), '-f', '-o', str(output)],
                           text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=ROOT)
 
 with tempfile.TemporaryDirectory(prefix='query-api-') as directory:
     path=Path(directory)
-    for name, text in [('header.hpp',HEADER), ('Leaf.hpp',LEAF), ('Top.hpp',TOP), ('Main.cpp',MAIN)]:
+    for name, text in [('header.uh',HEADER), ('Leaf.vul',LEAF), ('Top.vul',TOP), ('Main.utb',MAIN)]:
         (path / name).write_text(text)
     for tool in ['vulsimgen','vulrtlgen']:
         out=path / tool
@@ -112,8 +112,8 @@ with tempfile.TemporaryDirectory(prefix='query-api-') as directory:
         result=subprocess.run([str(out / 'run.sh')], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if result.returncode: raise RuntimeError(result.stdout)
         print(f'QUERY check PASS: {tool}, multiaxis snapshots, partial wildcards, nested returns, enum, Int<80>, reset')
-    (path / 'Main.cpp').write_text('''#include <run.hpp>
-TOP("Top.hpp"); PROJECT("."); QUERY(result, uint32_t);
+    (path / 'Main.utb').write_text('''#include <run.hpp>
+TOP("Top.vul"); PROJECT("."); QUERY(result, uint32_t);
 SIMULATION() { sim_nextcycle(); }
 ''')
     cases=[
@@ -131,7 +131,7 @@ SIMULATION() { sim_nextcycle(); }
         ('CHILD_INSTANCE(Leaf, mesh, dims=[2,3]); USE_CHILD_QUERY(mesh[*][*], scalar, q, uint32_t); QUERY(result, uint32_t) { return 0; }', 'return type mismatch'),
     ]
     for source,message in cases:
-        (path / 'Top.hpp').write_text(source)
+        (path / 'Top.vul').write_text(source)
         result=invoke('vulsimgen',path,path / 'error')
         if result.returncode==0 or message not in result.stdout:
             raise RuntimeError(f'expected {message!r}\n{result.stdout}')
@@ -141,7 +141,7 @@ SIMULATION() { sim_nextcycle(); }
         'QUERY(result, uint32_t); QUERY(result, uint32_t) { return 7; }',
         'INTERFACE() { QUERY(result, uint32_t); } USE_VERSION(v); VERSION(other) {} VERSION(v) { QUERY(result, uint32_t) { return 7; } }',
     ]:
-        (path / 'Top.hpp').write_text(source)
+        (path / 'Top.vul').write_text(source)
         result=invoke('vulsimgen',path,path / 'valid')
         if result.returncode: raise RuntimeError(result.stdout)
     print('QUERY check PASS: plain forward declarations and explicit version selection')

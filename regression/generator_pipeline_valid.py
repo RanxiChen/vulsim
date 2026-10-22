@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-valid-') as directory:
     for latency in (1, 2, 8):
         case = base / f'case{latency}'
         case.mkdir()
-        (case / 'header.hpp').write_text('''
+        (case / 'header.uh').write_text('''
 CONFIG(LATENCY, %d);
 HELPER() {
     inline uint32_t computation_calls = 0;
@@ -27,7 +27,7 @@ HELPER() {
 }
 ''' % latency)
         # Put OVALID before data outputs to exercise commit ordering.
-        (case / 'Top.hpp').write_text('''
+        (case / 'Top.vul').write_text('''
 INTERFACE() {
     SERVICE(push, ARG(uint32_t) x, ARG(bool) v);
     QUERY(data, uint32_t); QUERY(other, uint32_t);
@@ -46,11 +46,11 @@ QUERY(other, uint32_t) { return output2; }
 QUERY(valid, bool) { return ov; }
 QUERY(calls, uint32_t) { return computation_calls; }
 ''')
-        (case / 'Main.cpp').write_text('''
+        (case / 'Main.utb').write_text('''
 #include <cstdlib>
 #include <cstdio>
 #include <run.hpp>
-TOP("Top.hpp"); PROJECT(".");
+TOP("Top.vul"); PROJECT(".");
 REQUEST(push, ARG(uint32_t) x, ARG(bool) v);
 QUERY(data, uint32_t); QUERY(other, uint32_t);
 QUERY(valid, bool); QUERY(calls, uint32_t);
@@ -85,5 +85,5 @@ SIMULATION() {
 }
 ''')
         output = base / f'output{latency}'
-        run([ROOT / 'build/vulsimgen', '-m', case / 'Main.cpp', '-f', '-o', output])
+        run([ROOT / 'build/vulsimgen', '-m', case / 'Main.utb', '-f', '-o', output])
         print(run([output / 'run.sh']).strip())

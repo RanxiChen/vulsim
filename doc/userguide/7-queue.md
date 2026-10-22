@@ -99,7 +99,7 @@ void clrnext();
 
 下面是仓库中单宽队列的典型用法。
 
-### 7.5.1 队列定义与服务导出（`FIFO.hpp`）
+### 7.5.1 队列定义与服务导出（`FIFO.vul`）
 
 ```cpp
 CONFIG(QUEUE_SIZE, 8);
@@ -127,7 +127,7 @@ TICK_IMPL() {
 1. 每隔一个周期向队列入队一个 `cycle` 值。
 2. 通过 `SERVICE(deq, ready=q.deqvalid(), ...)` 把 `deqvalid()` 直接作为服务就绪条件，只有可出队时才允许外部调用 `deqnext()`。
 
-### 7.5.2 消费端按节拍读取（`Reader.hpp`）
+### 7.5.2 消费端按节拍读取（`Reader.vul`）
 
 ```cpp
 REQUEST(deq, handshake=true, RESP(uint32_t) data);
@@ -148,7 +148,7 @@ TICK_IMPL() {
 
 ### 7.5.3 顶层连接与仿真输出
 
-`Top.hpp` 中把 `reader.deq` 连接到 `fifo.deq`，`TestMain.cpp` 中打印 `output` 数据，构成完整的“生产者-队列-消费者”示例。
+`Top.vul` 中把 `reader.deq` 连接到 `fifo.deq`，`TestMain.utb` 中打印 `output` 数据，构成完整的“生产者-队列-消费者”示例。
 
 ## 7.6 常见注意事项
 

@@ -1,0 +1,27 @@
+#pragma once
+#include "header.uh"
+
+INTERFACE() {
+    SERVICE(left, dims=[SIZE], ARG(Operand) value);
+    SERVICE(up, dims=[SIZE], ARG(Operand) value);
+    SERVICE(clear);
+    SERVICE(right_edge, dims=[SIZE], ARG(Operand) value);
+    SERVICE(bottom_edge, dims=[SIZE], ARG(Operand) value);
+    QUERY(snapshot, MatrixState);
+}
+
+CHILD_INSTANCE(PE, mesh, dims=[SIZE, SIZE], PARAM(ROW)=COORD(0), PARAM(COL)=COORD(1));
+CONNECT_S_CS(left, mesh[*][0], left);
+CONNECT_S_CS(up, mesh[0][*], up);
+CONNECT_CR_CS(mesh[$][?], right, mesh[$][?+1], left);
+CONNECT_CR_CS(mesh[$][?], down, mesh[$+1][?], up);
+CONNECT_CR_S(mesh[*][SIZE-1], right, right_edge);
+CONNECT_CR_S(mesh[SIZE-1][*], down, bottom_edge);
+USE_CHILD_SERVICE(mesh[*][*], clear, clear_all);
+USE_CHILD_QUERY(mesh[*][*], result, results, PEState);
+
+// Start a new job after draining the input pipeline. Reset also clears in-flight data.
+SERVICE(clear) { clear_all(); }
+SERVICE(right_edge, dims=[SIZE], ARG(Operand) value) { }
+SERVICE(bottom_edge, dims=[SIZE], ARG(Operand) value) { }
+QUERY(snapshot, MatrixState) { return results(); }

@@ -3,14 +3,14 @@
 在运行 `vulsimgen` 时可以通过命令行参数启用波形追踪功能，通过字符串匹配指定的实例名和信号名，将选中的信号波形记录到 `trace.vcd` 文件中。如：
 
 ```bash
-./vulsimgen -t example/prodcon/TopModule.hpp -m example/prodcon/Main.hpp --trace "top::conn.*"
+./vulsimgen -t example/prodcon/TopModule.vul -m example/prodcon/Main.utb --trace "top::conn.*"
 ```
 
 或是：
 
 ```bash
 echo "top::conn.*" > trace_config.txt
-./vulsimgen -t example/prodcon/TopModule.hpp -m example/prodcon/Main.hpp -T trace_config.txt
+./vulsimgen -t example/prodcon/TopModule.vul -m example/prodcon/Main.utb -T trace_config.txt
 ```
 
 上述命令将在运行时记录 `top::conn` 实例中所有寄存器信号。
@@ -86,7 +86,7 @@ top::lane.datareg
 示例：
 
 ```bash
-./vulsimgen -t example/systolic2d/Top.hpp -m example/systolic2d/Main.cpp \
+./vulsimgen -t example/systolic2d/Top.vul -m example/systolic2d/Main.utb \
     --trace "top::mesh.datareg" \
     --break "(top::mesh[0][0].datareg == 1) && (top::mesh[1][0].datareg == 10)"
 ```
@@ -99,7 +99,7 @@ cat > break.txt <<'EOF'
 (top::cons.cycle == 2)
 EOF
 
-./vulsimgen -t example/prodcon/TopModule.hpp -m example/prodcon/Main.cpp \
+./vulsimgen -t example/prodcon/TopModule.vul -m example/prodcon/Main.utb \
     --trace "top::cons.*" \
     -B break.txt
 ```

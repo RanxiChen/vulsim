@@ -24,10 +24,10 @@ else
 fi
 
 shopt -s nullglob
-main_files=("$ROOT_DIR"/regression/*/Main.cpp)
+main_files=("$ROOT_DIR"/regression/*/Main.utb)
 python_files=("$ROOT_DIR"/regression/*.py)
 if (( ${#main_files[@]} == 0 && ${#python_files[@]} == 0 )); then
-    echo "[regression] No regression/*/Main.cpp or regression/*.py files found." >&2
+    echo "[regression] No regression/*/Main.utb or regression/*.py files found." >&2
     exit 1
 fi
 

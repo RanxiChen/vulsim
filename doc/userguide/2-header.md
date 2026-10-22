@@ -2,12 +2,12 @@
 
 在 VulCPP 项目中，全局常量和数据结构被定义在项目级 header 中。工具会在候选项目根目录中查找下面二者之一：
 
-- `header/` 目录：推荐的新形式，目录内所有 `.h` / `.hpp` 文件共同组成项目级 header。
-- `header.hpp` 或 `header.h`：兼容旧项目或小型项目的单文件形式。
+- `header/` 目录：推荐的新形式，目录内所有 `.uh` 文件共同组成项目级 header。
+- `header.uh`：单文件形式。
 
-两种形式不能同时存在。项目级 header 中定义的全局常量、结构体、枚举和类型别名会在所有模块中通用，即使某个模块没有显式 `#include` 对应 header 文件。
+两种形式不能同时存在。扩展名区分大小写，只接受 `.uh`。项目级 header 中定义的全局常量、结构体、枚举和类型别名会在所有模块中通用，即使某个模块没有显式 `#include` 对应 header 文件。
 
-当使用 `header/` 目录时，目录内 `.h` / `.hpp` 文件会通过 C++ 风格的 `#include` 关系建立解析顺序：被 include 的文件先解析，include 它的文件后解析；循环 include 会报错。每个文件都按旧的 `header.hpp` 规则解析。
+当使用 `header/` 目录时，目录内 `.uh` 文件会通过 C++ 风格的 `#include` 关系建立解析顺序：被 include 的文件先解析，include 它的文件后解析；循环 include 会报错。每个文件都按单文件 `header.uh` 规则解析。
 
 全局 `CONFIG` 和全局 bundle（`STRUCT`、`ENUM`、`ALIAS`）共享同一个项目级命名域，不允许重名或覆盖；例如 `CONFIG(Word, 32)` 与 `STRUCT(Word)` 会报错。
 

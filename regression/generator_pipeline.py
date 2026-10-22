@@ -19,7 +19,7 @@ def run(args, cwd=ROOT, success=True):
 
 
 def generate(tool, case, output, success=True, circt=False):
-    args = [ROOT/'build'/tool, '-m', case/'Main.cpp', '-f', '-o', output]
+    args = [ROOT/'build'/tool, '-m', case/'Main.utb', '-f', '-o', output]
     if circt:
         args.append('--circt')
     return run(args, success=success)
@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
     for latency in (1, 2, 3, 4, 8):
         case = base/f'case{latency}'
         shutil.copytree(FIXTURE, case)
-        header = case/'header.hpp'
+        header = case/'header.uh'
         header.write_text(header.read_text().replace('CONFIG(LATENCY, 3)', f'CONFIG(LATENCY, {latency})'))
         for backend, tool in [('sim', 'vulsimgen'), ('rtl', 'vulrtlgen')]:
             out = base/f'{backend}{latency}'
@@ -61,8 +61,8 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
 
     case = base/'negative'
     case.mkdir()
-    (case/'header.hpp').write_text('')
-    (case/'Main.cpp').write_text('TOP("Top.hpp"); PROJECT("."); SIMULATION() {}')
+    (case/'header.uh').write_text('')
+    (case/'Main.utb').write_text('TOP("Top.vul"); PROJECT("."); SIMULATION() {}')
     default = 'PIPELINE(p, 2, IREG(a, Int<16>), OREG(b, Int<16>)) { b=a; }'
     invalid = {
         'zero latency': default.replace('p, 2', 'p, 0'),
@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
         'attribute after endpoints': default.replace('OREG(b, Int<16>)', 'OREG(b, Int<16>), latency=3'),
     }
     for name, source in invalid.items():
-        (case/'Top.hpp').write_text(source)
+        (case/'Top.vul').write_text(source)
         for tool in ('vulsimgen', 'vulrtlgen'):
             generate(tool, case, base/'bad', success=False)
     print(f'PASS {len(invalid)} declaration diagnostics on both generators')
@@ -110,16 +110,16 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
         'internal storage access': default+' TICK_IMPL() { auto x=__vul_store_a.get(); }',
     }
     for name, source in invalid_logic.items():
-        (case/'Top.hpp').write_text(source)
+        (case/'Top.vul').write_text(source)
         out = base/'bad-sim'
-        p = subprocess.run([str(ROOT/'build/vulsimgen'), '-m', str(case/'Main.cpp'), '-f', '-o', str(out)], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p = subprocess.run([str(ROOT/'build/vulsimgen'), '-m', str(case/'Main.utb'), '-f', '-o', str(out)], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if p.returncode == 0:
             run(['g++', '-std=c++20', '-fsyntax-only', '-I'+str(out), out/'main.cpp'], success=False)
         generate('vulrtlgen', case, base/'bad-rtl', success=False)
     print(f'PASS {len(invalid_logic)} access isolation cases')
 
     for body in ('if (a != Int<16>(0)) b=a;', 'b=b+Int<16>(1);', 'return;'):
-        (case/'Top.hpp').write_text(default.replace('b=a;', body))
+        (case/'Top.vul').write_text(default.replace('b=a;', body))
         generate('vulsimgen', case, base/'incomplete-sim')
         error = generate('vulrtlgen', case, base/'incomplete-rtl', success=False)
         assert 'definition' in error or 'coverage' in error or 'final value' in error, error
@@ -127,7 +127,7 @@ with tempfile.TemporaryDirectory(prefix='vul-pipeline-') as directory:
 
     # Pure native C++ unsupported by the synthesizer remains usable in simgen.
     source = default.replace('b=a;', 'try { b=a; } catch (...) { b=0; }')
-    (case/'Top.hpp').write_text(source)
+    (case/'Top.vul').write_text(source)
     generate('vulsimgen', case, base/'native-sim')
     run(['g++', '-std=c++20', '-fsyntax-only', '-I'+str(base/'native-sim'), base/'native-sim/main.cpp'])
     generate('vulrtlgen', case, base/'native-rtl', success=False)

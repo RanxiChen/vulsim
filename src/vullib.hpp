@@ -35,9 +35,7 @@ inline constexpr std::array<std::string_view, 4> VulRTLLibFiles = {
     "common.h",
 };
 
-inline constexpr std::array<std::string_view, 4> VulEscapedHeaders = {
+inline constexpr std::array<std::string_view, 2> VulEscapedHeaders = {
     "defhelper.hpp",
     "run.hpp",
-    "header.hpp",
-    "header.h",
 };

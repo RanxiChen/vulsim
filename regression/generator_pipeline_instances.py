@@ -13,8 +13,8 @@ def run(args):
 
 with tempfile.TemporaryDirectory(prefix='pipeline-instances-') as directory:
     case=Path(directory)
-    (case/'header.hpp').write_text('ALIAS(Row, Int<16>, dims=[3]);')
-    (case/'Leaf.hpp').write_text('''INTERFACE() {
+    (case/'header.uh').write_text('ALIAS(Row, Int<16>, dims=[3]);')
+    (case/'Leaf.vul').write_text('''INTERFACE() {
         PARAMETER(OFFSET, 0);
         SERVICE(push, ARG(Int<16>) value);
         QUERY(result, Int<16>);
@@ -23,15 +23,15 @@ with tempfile.TemporaryDirectory(prefix='pipeline-instances-') as directory:
     SERVICE(push, ARG(Int<16>) value) { a.setnext(value); }
     QUERY(result, Int<16>) { return b; }
     ''')
-    (case/'Top.hpp').write_text('''INTERFACE() { SERVICE(push, dims=[3], ARG(Int<16>) value); QUERY(results, Row); }
+    (case/'Top.vul').write_text('''INTERFACE() { SERVICE(push, dims=[3], ARG(Int<16>) value); QUERY(results, Row); }
     CHILD_INSTANCE(Leaf, mesh, dims=[3], PARAM(OFFSET)=COORD(0));
     CONNECT_S_CS(push, mesh[*], push);
     USE_CHILD_QUERY(mesh[*], result, snapshot, Int<16>);
     QUERY(results, Row) { return snapshot(); }
     ''')
-    (case/'Main.cpp').write_text('''#include <cstdlib>
+    (case/'Main.utb').write_text('''#include <cstdlib>
     #include <run.hpp>
-    TOP("Top.hpp"); PROJECT(".");
+    TOP("Top.vul"); PROJECT(".");
     REQUEST(push, dims=[3], ARG(Int<16>) value); QUERY(results, Row);
     SIMULATION() {
         for (uint32_t i=0; i<20; ++i) {
@@ -44,10 +44,10 @@ with tempfile.TemporaryDirectory(prefix='pipeline-instances-') as directory:
     ''')
     for tool in ('vulsimgen','vulrtlgen'):
         out=case/tool
-        run([ROOT/'build'/tool,'-m',case/'Main.cpp','-f','-o',out])
+        run([ROOT/'build'/tool,'-m',case/'Main.utb','-f','-o',out])
         run([out/'run.sh'])
     release=case/'release'
-    run([ROOT/'build/vulrtlgen','-m',case/'Main.cpp','-f','--release','-o',release])
+    run([ROOT/'build/vulrtlgen','-m',case/'Main.utb','-f','--release','-o',release])
     assert not list(release.rglob('*.pipeline_*.cpp'))
     assert not list(release.rglob('*.dbgmap'))
     print('PASS parameterized pipeline child instances and release cleanup')

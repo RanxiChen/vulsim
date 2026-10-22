@@ -58,7 +58,7 @@ int main() {
                "USE_CHILD_QUERY(query=status, instance=n[*], type=uint32_t, dims=[2], alias=alias);");
     equivalent("VERSION(v) {}", "VERSION(name=v) {}");
     equivalent("USE_VERSION(v);", "USE_VERSION(name=v);");
-    equivalent("TOP(\"a=b.hpp\");", "TOP(path=\"a=b.hpp\");");
+    equivalent("TOP(\"a=b.vul\");", "TOP(path=\"a=b.vul\");");
     equivalent("PROJECT(\".\");", "PROJECT(path=\".\");");
     check(parse("REQUEST(r, ARG(uint32_t) x);").args.size() == 2, "default handshake must stay implicit");
     check(parse("SERVICE(s, ready=true) {}").args == std::vector<std::string>{"s", "ready=true"}, "ready must retain implicit handshake");
@@ -146,7 +146,7 @@ static_assert(std::is_same_v<decltype(q), VulQueue<Word, N>>);
 static_assert(std::is_same_v<decltype(mp), VulQueueMP<Word, N, 2, 3>>);
 static_assert(std::is_same_v<decltype(single), VulBRAM1RW<Word, N>>);
 TICK_IMPL() { count.setnext(count.get() + 1); q.enqnext(count.get()); }
-TOP("Top.hpp"); PROJECT(".");
+TOP("Top.vul"); PROJECT(".");
 GLOBAL() { int cycles = 0; }
 SIMULATION() { ++cycles; sim_nextcycle(); sim_reset(); sim_exit(); }
 '''
@@ -163,8 +163,8 @@ with tempfile.TemporaryDirectory(prefix="vul-declarations-") as directory:
                    + [str(ROOT / "src" / name) for name in sources]
                    + ["-o", str(executable)], check=True, cwd=ROOT)
     subprocess.run([str(executable)], check=True, cwd=ROOT)
-    editor = path / "editor.cpp"
+    editor = path / "editor.utb"
     editor.write_text(EDITOR_SOURCE)
-    subprocess.run(compiler + ["-std=c++20", "-fsyntax-only", "-I", str(ROOT / "vullib"), str(editor)],
+    subprocess.run(compiler + ["-std=c++20", "-x", "c++", "-fsyntax-only", "-I", str(ROOT / "vullib"), str(editor)],
                    check=True, cwd=ROOT)
 print("declaration API check PASS: canonical grammar, diagnostics and editor types")

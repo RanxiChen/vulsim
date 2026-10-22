@@ -19,7 +19,7 @@ def require(command):
 
 with tempfile.TemporaryDirectory(prefix="generator-declarations-") as directory:
     path = Path(directory)
-    (path / "header.hpp").write_text('''#include <defhelper.hpp>
+    (path / "header.uh").write_text('''#include <defhelper.hpp>
 CONFIG(value=8, name=DEPTH);
 ALIAS(type=uint32_t, name=Word);
 ALIAS(dims=[2,3], name=Matrix, type=Word);
@@ -27,7 +27,7 @@ STRUCT(name=Packet) { Word data; bool valid; };
 ENUM(name=State) { Idle=0, Active=1 };
 ''')
     modules = {
-        "Top.hpp": '''INTERFACE() {
+        "Top.vul": '''INTERFACE() {
     PARAMETER(value=4, name=WIDTH);
     REQUEST(name=report, ARG(Word) value);
     SERVICE(name=load, ARG(Word) value);
@@ -52,24 +52,24 @@ VERSION(name=selected) {
     QUERY(type=Word, name=result) { return node_value() + seen.get(); }
 }
 ''',
-        "Node.hpp": '''PARAMETER(name=BASE, value=1);
+        "Node.vul": '''PARAMETER(name=BASE, value=1);
 REGISTER(name=saved, type=Word) { saved=BASE; }
 REQUEST(name=send, ARG(Word) value);
 SERVICE(name=load, ARG(Word) value) { saved.setnext(value+BASE); send(value); }
 QUERY(name=status, type=Word) { return saved.get(); }
 ''',
-        "Producer.hpp": '''REQUEST(name=send, ARG(Word) value);
+        "Producer.vul": '''REQUEST(name=send, ARG(Word) value);
 TICK_IMPL() { send(3); }
 ''',
-        "Sink.hpp": '''REQUEST(name=send, ARG(Word) value);
+        "Sink.vul": '''REQUEST(name=send, ARG(Word) value);
 SERVICE(name=receive, ARG(Word) value) { send(value+1); }
 ''',
     }
     for filename, source in modules.items():
-        (path / filename).write_text('#include "header.hpp"\n' + source)
-    (path / "Main.cpp").write_text('''#include <cstdlib>
+        (path / filename).write_text('#include "header.uh"\n' + source)
+    (path / "Main.utb").write_text('''#include <cstdlib>
 #include <run.hpp>
-TOP(path="./Top.hpp"); PROJECT(path="."); PARAMETER(value=6, name=WIDTH);
+TOP(path="./Top.vul"); PROJECT(path="."); PARAMETER(value=6, name=WIDTH);
 QUERY(type=Word, name=result);
 REQUEST(name=load, ARG(Word) value);
 GLOBAL() { Word reported=0; }
@@ -85,26 +85,26 @@ SIMULATION() {
 ''')
     for tool in ("vulsimgen", "vulrtlgen"):
         out = path / tool
-        require([str(ROOT / "build" / tool), "-m", str(path / "Main.cpp"), "-f", "-o", str(out)])
+        require([str(ROOT / "build" / tool), "-m", str(path / "Main.utb"), "-f", "-o", str(out)])
         require([str(out / "run.sh")])
         print(f"generator declaration check PASS: {tool}, named headers/versions/bindings/all connections")
 
     shapes = path / "shapes"
     shapes.mkdir()
-    (shapes / "header.hpp").write_text("#pragma once\n")
-    (shapes / "Leaf.hpp").write_text('''REGISTER(name=saved, type=uint32_t);
+    (shapes / "header.uh").write_text("#pragma once\n")
+    (shapes / "Leaf.vul").write_text('''REGISTER(name=saved, type=uint32_t);
 SERVICE(name=load, ARG(uint32_t) value) { saved.setnext(value); }
 QUERY(name=status, type=uint32_t) { return saved.get(); }
 ''')
-    (shapes / "ShapeTop.hpp").write_text('''CHILD_INSTANCE(name=n, module=Leaf, dims=[2,3]);
+    (shapes / "ShapeTop.vul").write_text('''CHILD_INSTANCE(name=n, module=Leaf, dims=[2,3]);
 USE_CHILD_SERVICE(alias=write, service=load, instance=n[*][*], dims=[2,3], ARG(uint32_t) value);
 USE_CHILD_QUERY(alias=cell, query=status, instance=n[1][2], type=uint32_t, dims=[]);
 QUERY(name=result, type=uint32_t) { return cell(); }
 TICK_IMPL() { write<1,2>(9); }
 ''')
-    (shapes / "Main.cpp").write_text('''#include <cstdlib>
+    (shapes / "Main.utb").write_text('''#include <cstdlib>
 #include <run.hpp>
-TOP(path="ShapeTop.hpp"); PROJECT(path="."); QUERY(name=result, type=uint32_t);
+TOP(path="ShapeTop.vul"); PROJECT(path="."); QUERY(name=result, type=uint32_t);
 SIMULATION() {
     if (result()!=0) std::exit(1);
     sim_nextcycle();
@@ -113,12 +113,12 @@ SIMULATION() {
 ''')
     for tool in ("vulsimgen", "vulrtlgen"):
         out = path / (tool + '-shapes')
-        require([str(ROOT / "build" / tool), "-m", str(shapes / "Main.cpp"), "-f", "-o", str(out)])
+        require([str(ROOT / "build" / tool), "-m", str(shapes / "Main.utb"), "-f", "-o", str(out)])
         require([str(out / "run.sh")])
         print(f"generator declaration check PASS: {tool}, explicit child alias shape")
 
-    (path / "Main.cpp").write_text('''#include <run.hpp>
-TOP(path="./Top.hpp"); PROJECT(path="."); QUERY(name=result, type=Word);
+    (path / "Main.utb").write_text('''#include <run.hpp>
+TOP(path="./Top.vul"); PROJECT(path="."); QUERY(name=result, type=Word);
 SIMULATION() { sim_nextcycle(); }
 ''')
     errors = [
@@ -136,18 +136,18 @@ SIMULATION() { sim_nextcycle(); }
         ('REGISTER_MUL(r, Word, 2);', 'has been removed; use'),
     ]
     for source, message in errors:
-        (path / "Top.hpp").write_text('#include "header.hpp"\n// skipped comment\n\n' + source + '\nQUERY(result, Word) { return 0; }\n')
-        result = run([str(ROOT / "build/vulsimgen"), "-m", str(path / "Main.cpp"), "-f", "-o", str(path / "errors")])
+        (path / "Top.vul").write_text('#include "header.uh"\n// skipped comment\n\n' + source + '\nQUERY(result, Word) { return 0; }\n')
+        result = run([str(ROOT / "build/vulsimgen"), "-m", str(path / "Main.utb"), "-f", "-o", str(path / "errors")])
         if result.returncode == 0 or message not in result.stdout:
             raise RuntimeError(f"expected {message!r} for {source}\n{result.stdout}")
         if 'ports=2, ports=3' in source and 'Line 4:1' not in result.stdout:
             raise RuntimeError('lost original declaration location: ' + result.stdout)
     print("generator declaration check PASS: semantic errors and original source positions")
 
-    register_main = path / "RegisterMain.cpp"
+    register_main = path / "RegisterMain.utb"
     register_main.write_text('''#include <cstdlib>
 #include <run.hpp>
-TOP("''' + str(ROOT / "example/apiinline_register/Top.hpp") + '''");
+TOP("''' + str(ROOT / "example/apiinline_register/Top.vul") + '''");
 PROJECT("''' + str(ROOT / "example/apiinline_register") + '''");
 QUERY(summary, RegisterSummary);
 SIMULATION() {
@@ -163,8 +163,8 @@ SIMULATION() {
     resources = path / "resources"
     resources.mkdir()
     (resources / "values.hex").write_text("05\n06\n07\n08\n")
-    (resources / "header.hpp").write_text("ALIAS(name=Pair, type=uint32_t, dims=[2]);\n")
-    (resources / "Top.hpp").write_text('''REGISTER(name=phase, type=uint32_t);
+    (resources / "header.uh").write_text("ALIAS(name=Pair, type=uint32_t, dims=[2]);\n")
+    (resources / "Top.vul").write_text('''REGISTER(name=phase, type=uint32_t);
 QUEUE(name=singleq, type=uint32_t, depth=4);
 BRAM(name=bank, type=uint32_t, size=4, read_ports=2, write_ports=2);
 BRAM(name=single, type=uint32_t, size=4, mode=1rw);
@@ -189,9 +189,9 @@ TICK_IMPL() {
     phase.setnext(phase.get()+1);
 }
 ''')
-    (resources / "Main.cpp").write_text('''#include <cstdlib>
+    (resources / "Main.utb").write_text('''#include <cstdlib>
 #include <run.hpp>
-TOP(path="Top.hpp"); PROJECT(path="."); QUERY(name=result, type=uint32_t);
+TOP(path="Top.vul"); PROJECT(path="."); QUERY(name=result, type=uint32_t);
 SIMULATION() {
     sim_nextcycle(); sim_nextcycle();
     if (result()!=25) std::exit(1);
@@ -201,8 +201,8 @@ SIMULATION() {
 ''')
     for tool in ("vulsimgen", "vulrtlgen"):
         for label, main in [("register", register_main),
-                            ("queue", ROOT / "example/queue_mp_demo/test/Main.cpp"),
-                            ("memory", resources / "Main.cpp")]:
+                            ("queue", ROOT / "example/queue_mp_demo/test/Main.utb"),
+                            ("memory", resources / "Main.utb")]:
             out = path / (tool + '-' + label)
             require([str(ROOT / "build" / tool), "-m", str(main), "-f", "-o", str(out)])
             require([str(out / "run.sh")])

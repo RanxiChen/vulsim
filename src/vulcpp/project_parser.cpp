@@ -16,6 +16,7 @@
 
 #include "module_parser.hpp"
 #include "test_parser.hpp"
+#include "source_files.hpp"
 #include "../configexpr.hpp"
 #include "../cppparse.hpp"
 #include "../stringop.hpp"
@@ -37,8 +38,7 @@ using namespace cppparse;
 using namespace stringop;
 
 static bool isHeaderSourceFile(const std::filesystem::path &p) {
-    const string ext = p.extension().string();
-    return ext == ".h" || ext == ".hpp";
+    return vulsource::hasExtension(p, vulsource::HeaderExtension);
 }
 
 static string pathInHeaderDirKey(
@@ -97,6 +97,9 @@ static vector<std::filesystem::path> collectHeaderParseOrder(const std::filesyst
     unordered_map<string, path> item_to_path;
 
     for (const auto &entry : recursive_directory_iterator(header_dir_canon)) {
+        if (entry.is_regular_file() && vulsource::isLegacyHeader(entry.path())) {
+            vulsource::requireExtension(entry.path(), vulsource::HeaderExtension, "Global header");
+        }
         if (!entry.is_regular_file() || !isHeaderSourceFile(entry.path())) {
             continue;
         }
@@ -185,19 +188,20 @@ static bool parseProjectHeaders(
     using namespace std::filesystem;
 
     const path header_dir = proj_dir / "header";
-    const path header_hpp = proj_dir / "header.hpp";
-    const path header_h = proj_dir / "header.h";
+    const path header_uh = proj_dir / ("header" + string(vulsource::HeaderExtension));
     const bool has_header_dir = exists(header_dir) && is_directory(header_dir);
-    const bool has_header_hpp = exists(header_hpp) && is_regular_file(header_hpp);
-    const bool has_header_h = exists(header_h) && is_regular_file(header_h);
+    const bool has_header_uh = is_regular_file(header_uh);
 
-    if (has_header_hpp && has_header_h) {
-        throw VulException("Both header.hpp and header.h exist in project root; keep only one single-header file");
+    for (const auto &old_name : {"header.hpp", "header.h"}) {
+        const path old_header = proj_dir / old_name;
+        if (is_regular_file(old_header)) {
+            vulsource::requireExtension(old_header, vulsource::HeaderExtension, "Global header");
+        }
     }
-    if (has_header_dir && (has_header_hpp || has_header_h)) {
+    if (has_header_dir && has_header_uh) {
         throw VulException("Both header directory and single-header file exist in project root; keep only one header system");
     }
-    if (!has_header_dir && !has_header_hpp && !has_header_h) {
+    if (!has_header_dir && !has_header_uh) {
         return false;
     }
 
@@ -205,7 +209,7 @@ static bool parseProjectHeaders(
     if (has_header_dir) {
         header_files = collectHeaderParseOrder(header_dir);
     } else {
-        header_files.push_back(has_header_hpp ? header_hpp : header_h);
+        header_files.push_back(header_uh);
     }
 
     if (header_files.empty()) return false;
@@ -233,6 +237,12 @@ VulStaticProject parseVcppStaticProjectImpl(
 
     using namespace std::filesystem;
 
+    if (!main_file_path.empty()) {
+        vulsource::requireExtension(main_file_path, vulsource::TestExtension, "Test Main");
+    }
+    if (!top_file_path.empty()) {
+        vulsource::requireExtension(top_file_path, vulsource::ModuleExtension, "Top module");
+    }
     bool is_sim = !main_file_path.empty();
 
     path main_path;
@@ -241,8 +251,7 @@ VulStaticProject parseVcppStaticProjectImpl(
     if (!main_file_path.empty()) {
         main_path = path(main_file_path);
         if (!exists(main_path) || !is_regular_file(main_path)) {
-            std::cerr << "Error: Main file does not exist or is not a regular file: " << main_file_path << std::endl;
-            assert(0);
+            throw VulException("Main file does not exist or is not a regular file: " + main_file_path);
         }
         std::tie(scanned_top_module_path, scanned_project_dir_path) = scanTestModuleBindingPaths(main_path.string());
     }
@@ -270,6 +279,7 @@ VulStaticProject parseVcppStaticProjectImpl(
     if (top_path.empty()) {
         throw VulException("Top module path is not specified. Use -t/--top or TOP(...) in TestMain.");
     }
+    vulsource::requireExtension(top_path, vulsource::ModuleExtension, "Top module");
     if (!exists(top_path) || !is_regular_file(top_path)) {
         throw VulException("Top file does not exist or is not a regular file: " + top_path.string());
     }
@@ -319,13 +329,8 @@ VulStaticProject parseVcppStaticProjectImpl(
         if (iter != module_file_path_cache.end()) {
             return iter->second;
         }
-        vector<string> candidates = {
-            mod_name + ".hpp",
-            mod_name + ".cpp",
-            mod_name + ".vul",
-            mod_name + ".h"
-        };
-        for (const auto& candidate : candidates) {
+        const string candidate = mod_name + string(vulsource::ModuleExtension);
+        {
             // find in project directory recursively
             vector<path> found_paths;
             for (auto& p : recursive_directory_iterator(proj_dir)) {
@@ -342,6 +347,13 @@ VulStaticProject parseVcppStaticProjectImpl(
             } else if (!found_paths.empty()) {
                 module_file_path_cache[mod_name] = found_paths.front();
                 return found_paths.front();
+            }
+        }
+        // Legacy files are diagnostic hints only, never module inputs.
+        for (const auto &entry : recursive_directory_iterator(proj_dir)) {
+            if (entry.is_regular_file() && entry.path().stem() == mod_name &&
+                (vulsource::isLegacyHeader(entry.path()) || vulsource::hasExtension(entry.path(), ".cpp"))) {
+                vulsource::requireExtension(entry.path(), vulsource::ModuleExtension, "Module");
             }
         }
         return std::nullopt;

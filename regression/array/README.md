@@ -51,8 +51,8 @@ Main 的同一套测试同时用于 C++ 仿真与 RTL/Verilator 仿真：
 单独运行本项目：
 
 ```sh
-build/vulsimgen -m regression/array/Main.cpp -f -o build/array-sim
+build/vulsimgen -m regression/array/Main.utb -f -o build/array-sim
 build/array-sim/run.sh
-build/vulrtlgen -m regression/array/Main.cpp -f -o build/array-rtl
+build/vulrtlgen -m regression/array/Main.utb -f -o build/array-rtl
 build/array-rtl/run.sh
 ```

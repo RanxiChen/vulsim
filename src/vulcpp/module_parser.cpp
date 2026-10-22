@@ -19,6 +19,7 @@
 #include "declaration_args.hpp"
 #include "module_handlers.hpp"
 #include "versioning.hpp"
+#include "source_files.hpp"
 #include "../cppparse.hpp"
 
 #include <algorithm>
@@ -44,6 +45,7 @@ static string takeProjectPath(vector<MacroEntry> &entries, const VCPPModuleConte
 }
 
 string scanModuleProjectPath(const string &filepath) {
+    vulsource::requireExtension(filepath, vulsource::ModuleExtension, "Module");
     VulErrorContextGuard guard{"scanning PROJECT in module file " + filepath};
     auto stripped = stripComments(readFileLines(filepath));
     VCPPModuleContext context;
@@ -63,6 +65,9 @@ VulTempModule parseTempModule(
     unordered_map<string, string> *global_names,
     bool is_global_header
 ) {
+    vulsource::requireExtension(module_filepath,
+        is_global_header ? vulsource::HeaderExtension : vulsource::ModuleExtension,
+        is_global_header ? "Global header" : "Module");
     VulErrorContextGuard _err{"Parsing module '" + module_name + "' from file '" + module_filepath + "'"};
 
     VCPPModuleContext context;

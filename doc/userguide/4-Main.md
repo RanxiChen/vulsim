@@ -5,16 +5,12 @@ Main 是仿真入口，通过 `TOP` 和 `PROJECT` 选择顶层模块与工程目
 ## 工程绑定与参数
 
 ```cpp
-#include <defhelper.hpp>
-#include <run.hpp>
-#include "header.hpp"
-
-TOP(path="./Top.hpp");
+TOP(path="./Top.vul");
 PROJECT(path=".");
 PARAMETER(name=WIDTH, value=32);
 ```
 
-路径相对于 Main 文件所在目录解析。`TOP` 和 `PROJECT` 各只能声明一次；两者也可使用位置参数，如 `TOP("./Top.hpp")`。Main 中的 `PARAMETER` 覆盖顶层同名模块参数。
+路径相对于 Main 文件所在目录解析。`TOP` 和 `PROJECT` 各只能声明一次；两者也可使用位置参数，如 `TOP("./Top.vul")`。Main 中的 `PARAMETER` 覆盖顶层同名模块参数。
 
 `defhelper.hpp` 和 `run.hpp` 用于编辑期声明，不进入最终生成代码。项目全局类型与配置由项目 header 提供。标准库头文件可用于仿真代码。
 
