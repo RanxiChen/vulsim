@@ -1,0 +1,128 @@
+#pragma once
+
+STRUCT(RegReadPair) {
+    uint64_t rs1_val;
+    uint64_t rs2_val;
+};
+
+CONFIG(ALU_ADD, 0);
+CONFIG(ALU_SUB, 1);
+CONFIG(ALU_SLL, 2);
+CONFIG(ALU_SLT, 3);
+CONFIG(ALU_SLTU, 4);
+CONFIG(ALU_XOR, 5);
+CONFIG(ALU_SRL, 6);
+CONFIG(ALU_SRA, 7);
+CONFIG(ALU_OR, 8);
+CONFIG(ALU_AND, 9);
+CONFIG(BATCH_COUNT, 1024);
+CONFIG(BATCH_MASK, 1023);
+CONFIG(WB_ENTRIES, 8);
+CONFIG(MEM_IDLE, 0);
+CONFIG(MEM_ADDRESS, 1);
+CONFIG(MEM_REQUEST, 2);
+CONFIG(MEM_RESPONSE, 3);
+CONFIG(MEM_DONE, 4);
+
+STRUCT(Instruction) {
+    uint32_t inst;
+    uint64_t pc;
+};
+
+STRUCT(DecodedInst) {
+    bool legal;
+    bool use_imm;
+    bool writes_rd;
+    bool is_mem;
+    bool is_store;
+    bool load_unsigned;
+    uint32_t mem_bytes;
+    uint32_t alu_op;
+    uint32_t rs1;
+    uint32_t rs2;
+    uint32_t rd;
+};
+
+STRUCT(AluInput) {
+    bool valid;
+    uint32_t inst;
+    uint64_t pc;
+    uint32_t batch;
+    uint32_t alu_op;
+    uint64_t op1;
+    uint64_t op2;
+    uint32_t rd;
+    bool writes_rd;
+};
+
+STRUCT(Writeback) {
+    bool valid;
+    uint32_t inst;
+    uint64_t pc;
+    uint32_t batch;
+    uint32_t rd;
+    bool writes_rd;
+    bool is_mem;
+    uint64_t data;
+};
+
+STRUCT(MemRequest) {
+    uint64_t address;
+    uint64_t wdata;
+    uint32_t bytes;
+    bool write;
+    uint32_t batch;
+};
+
+STRUCT(MemResponse) {
+    uint64_t rdata;
+    bool error;
+};
+
+STRUCT(MemState) {
+    uint32_t phase;
+    uint32_t inst;
+    uint64_t pc;
+    uint32_t batch;
+    uint32_t rd;
+    bool writes_rd;
+    bool is_store;
+    bool load_unsigned;
+    uint32_t bytes;
+    uint64_t base;
+    uint64_t offset;
+    uint64_t store_data;
+    uint64_t address;
+    uint64_t data;
+    bool error;
+    uint32_t cause;
+};
+
+STRUCT(TrapInfo) {
+    bool valid;
+    uint64_t pc;
+    uint64_t address;
+    uint32_t cause;
+    uint32_t batch;
+};
+
+STRUCT(CoreStatus) {
+    uint32_t fase_phase;
+    uint32_t fase_raw;
+    bool fase_nowait;
+    uint32_t busy;
+    bool head_valid;
+    uint32_t head_inst;
+    bool unsupported;
+    bool trapped;
+    uint32_t issue_batch;
+    uint32_t commit_batch;
+    uint32_t commit_in_flight;
+    uint32_t issue_in_flight;
+    uint32_t pending_count;
+    bool overflow_valid;
+    AluInput alu_input;
+    Writeback wb;
+    MemState mem;
+    TrapInfo fault;
+};

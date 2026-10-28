@@ -1,0 +1,63 @@
+#pragma once
+
+#include "header.uh"
+#include <defhelper.hpp>
+
+INTERFACE() {
+    SERVICE(read2, priority=2,
+        ARG(bool) ren1, ARG(uint32_t) rs1,
+        ARG(bool) ren2, ARG(uint32_t) rs2,
+        RESP(RegReadPair) out);
+    SERVICE(write, priority=2,
+        ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
+
+    SERVICE(fase_access, handshake=0, priority=1,
+        ARG(bool) rd_en, ARG(bool) wr_en,
+        ARG(uint32_t) idx, ARG(uint64_t) wdata,
+        RESP(bool) busy, RESP(uint64_t) rdata);
+}
+
+REGISTER(regs, uint64_t, ports=1, dims=[32]) {
+    for (uint32_t i = 0; i < 32; ++i) {
+        regs[i] = 0;
+    }
+}
+
+WIRE(cpu_read_used, bool) {
+    cpu_read_used = false;
+}
+
+WIRE(cpu_write_used, bool) {
+    cpu_write_used = false;
+}
+
+SERVICE(read2, priority=2,
+    ARG(bool) ren1, ARG(uint32_t) rs1,
+    ARG(bool) ren2, ARG(uint32_t) rs2,
+    RESP(RegReadPair) out) {
+
+    cpu_read_used = ren1 || ren2;
+    out.rs1_val = (ren1 && rs1 != 0U) ? regs[rs1] : 0ULL;
+    out.rs2_val = (ren2 && rs2 != 0U) ? regs[rs2] : 0ULL;
+}
+
+SERVICE(write, priority=2,
+    ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen) {
+
+    cpu_write_used = wen && (rd != 0U);
+    if (cpu_write_used) {
+        regs.setnext<0>(rd, data);
+    }
+}
+
+SERVICE(fase_access, handshake=0, priority=1,
+    ARG(bool) rd_en, ARG(bool) wr_en,
+    ARG(uint32_t) idx, ARG(uint64_t) wdata,
+    RESP(bool) busy, RESP(uint64_t) rdata) {
+
+    busy = (rd_en && cpu_read_used) || (wr_en && cpu_write_used);
+    rdata = (rd_en && !busy && idx != 0U) ? regs[idx] : 0ULL;
+    if (wr_en && !busy && idx != 0U) {
+        regs.setnext<0>(idx, wdata);
+    }
+}

@@ -1,0 +1,18 @@
+#pragma once
+
+#include "header.uh"
+
+INTERFACE() {
+    SERVICE(generate, ARG(uint32_t) inst, RESP(uint64_t) imm);
+}
+
+SERVICE(generate, ARG(uint32_t) inst, RESP(uint64_t) imm) {
+    uint32_t value = (inst >> 20) & 0xfffU;
+    if ((inst & 0x7fU) == 0x23U) {
+        value = ((inst >> 25) << 5) | ((inst >> 7) & 31U);
+    }
+    imm = static_cast<uint64_t>(value);
+    if ((value & 0x800U) != 0U) {
+        imm = imm | 0xfffffffffffff000ULL;
+    }
+}

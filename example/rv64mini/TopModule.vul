@@ -1,0 +1,405 @@
+#pragma once
+
+#include "header.uh"
+#include "Decoder.vul"
+#include "ImmGen.vul"
+#include "RegisterFile.vul"
+#include "ALU.vul"
+#include "LSU.vul"
+
+INTERFACE() {
+    SERVICE(push_inst, handshake=1, ARG(uint32_t) inst);
+    SERVICE(fase_inject, handshake=0,
+        ARG(bool) inst64, ARG(uint32_t) inst64_raw, ARG(bool) inst64_nowait,
+        RESP(bool) inst64_ready, RESP(bool) inst64_busy);
+    REQUEST(result, handshake=1, ARG(Writeback) wb);
+    REQUEST(mem_req, handshake=1, ARG(MemRequest) req);
+    REQUEST(mem_resp, handshake=1, RESP(MemResponse) resp);
+    REQUEST(trap, ARG(TrapInfo) info);
+    QUERY(status, CoreStatus);
+}
+
+HELPER() {
+inline AluInput empty_alu() {
+    AluInput s;
+    s.valid = false; s.inst = 0; s.pc = 0; s.batch = 0;
+    s.alu_op = ALU_ADD; s.op1 = 0; s.op2 = 0; s.rd = 0; s.writes_rd = false;
+    return s;
+}
+inline Writeback empty_wb() {
+    Writeback s;
+    s.valid = false; s.inst = 0; s.pc = 0; s.batch = 0;
+    s.rd = 0; s.writes_rd = false; s.is_mem = false; s.data = 0;
+    return s;
+}
+inline MemState empty_mem() {
+    MemState s;
+    s.phase = MEM_IDLE; s.inst = 0; s.pc = 0; s.batch = 0;
+    s.rd = 0; s.writes_rd = false; s.is_store = false;
+    s.load_unsigned = false; s.bytes = 1; s.base = 0; s.offset = 0;
+    s.store_data = 0; s.address = 0; s.data = 0; s.error = false; s.cause = 0;
+    return s;
+}
+inline TrapInfo empty_trap() {
+    TrapInfo s;
+    s.valid = false; s.pc = 0; s.address = 0; s.cause = 0; s.batch = 0;
+    return s;
+}
+}
+
+QUEUE(inst_fifo, Instruction, 4);
+// Phase 0: idle; 1: latched request waiting for FIFO; 2: one-cycle ACK.
+REGISTER(fase_phase, uint32_t) { fase_phase = 0; }
+REGISTER(fase_raw, uint32_t) { fase_raw = 0; }
+REGISTER(fase_nowait, bool) { fase_nowait = false; }
+REGISTER(input_pc, uint64_t) { input_pc = 0; }
+REGISTER(busy, uint32_t) { busy = 0; }
+REGISTER(producer_batch, uint32_t, ports=1, dims=[32]) {
+    for (uint32_t i = 0; i < 32; ++i) producer_batch[i] = 0;
+}
+REGISTER(in_flight, uint32_t, ports=2, dims=[BATCH_COUNT]) {
+    for (uint32_t i = 0; i < BATCH_COUNT; ++i) in_flight[i] = 0;
+}
+REGISTER(issue_batch, uint32_t) { issue_batch = 0; }
+REGISTER(commit_batch, uint32_t) { commit_batch = 0; }
+REGISTER(alu_input, AluInput) { alu_input = empty_alu(); }
+REGISTER(wb, Writeback) { wb = empty_wb(); }
+REGISTER(pending, Writeback, ports=2, dims=[WB_ENTRIES]) {
+    for (uint32_t i = 0; i < WB_ENTRIES; ++i) pending[i] = empty_wb();
+}
+REGISTER(wb_cursor, uint32_t) { wb_cursor = 0; }
+REGISTER(overflow, Writeback) { overflow = empty_wb(); }
+REGISTER(mem, MemState) { mem = empty_mem(); }
+REGISTER(unsupported, bool) { unsupported = false; }
+REGISTER(trapped, bool) { trapped = false; }
+REGISTER(fault, TrapInfo) { fault = empty_trap(); }
+
+CHILD_INSTANCE(Decoder, decoder);
+CHILD_INSTANCE(ImmGen, immgen);
+CHILD_INSTANCE(RegisterFile, rf);
+CHILD_INSTANCE(ALU, alu);
+CHILD_INSTANCE(LSU, lsu);
+
+USE_CHILD_SERVICE(decoder, decode, decode_inst,
+    ARG(uint32_t) inst, RESP(DecodedInst) out);
+USE_CHILD_SERVICE(immgen, generate, generate_imm,
+    ARG(uint32_t) inst, RESP(uint64_t) imm);
+USE_CHILD_SERVICE(rf, read2, read_regs,
+    ARG(bool) ren1, ARG(uint32_t) rs1,
+    ARG(bool) ren2, ARG(uint32_t) rs2, RESP(RegReadPair) out);
+USE_CHILD_SERVICE(rf, write, write_reg,
+    ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
+USE_CHILD_SERVICE(alu, execute, execute_alu,
+    ARG(uint32_t) op, ARG(uint64_t) op1, ARG(uint64_t) op2, RESP(uint64_t) data);
+USE_CHILD_SERVICE(lsu, address, calculate_address,
+    ARG(uint64_t) base, ARG(uint64_t) offset, ARG(uint32_t) bytes,
+    RESP(uint64_t) addr, RESP(bool) misaligned);
+USE_CHILD_SERVICE(lsu, extend, extend_load,
+    ARG(uint64_t) raw, ARG(uint32_t) bytes,
+    ARG(bool) is_unsigned, RESP(uint64_t) data);
+
+SERVICE(push_inst, handshake=1,
+    ready=(!unsupported && !trapped && fase_phase != 1U && inst_fifo.enqready()), ARG(uint32_t) inst) {
+    Instruction item;
+    item.inst = inst;
+    item.pc = input_pc;
+    inst_fifo.enqnext(item);
+    input_pc.setnext(input_pc + 4ULL);
+}
+
+// Explicit FASE request/ACK protocol, independent of VUL automatic handshake.
+// Completion currently means FIFO admission for either nowait value.
+SERVICE(fase_inject, handshake=0,
+    ARG(bool) inst64, ARG(uint32_t) inst64_raw, ARG(bool) inst64_nowait,
+    RESP(bool) inst64_ready, RESP(bool) inst64_busy) {
+    inst64_ready = fase_phase == 2U;
+    inst64_busy = fase_phase == 1U;
+    if (fase_phase == 0U && inst64 && !unsupported && !trapped) {
+        fase_raw.setnext(inst64_raw);
+        fase_nowait.setnext(inst64_nowait);
+        fase_phase.setnext(1U);
+    }
+}
+
+QUERY(status, CoreStatus) {
+    CoreStatus s;
+    s.busy = busy;
+    s.fase_phase = fase_phase;
+    s.fase_raw = fase_raw;
+    s.fase_nowait = fase_nowait;
+    s.head_valid = inst_fifo.deqvalid();
+    s.head_inst = s.head_valid ? inst_fifo.front().inst : 0U;
+    s.unsupported = unsupported;
+    s.trapped = trapped;
+    s.issue_batch = issue_batch;
+    s.commit_batch = commit_batch;
+    uint32_t cb = commit_batch;
+    uint32_t ib = issue_batch;
+    s.commit_in_flight = in_flight[cb];
+    s.issue_in_flight = in_flight[ib];
+    s.pending_count = 0;
+    for (uint32_t i = 0; i < WB_ENTRIES; ++i)
+        if (pending[i].valid) s.pending_count = s.pending_count + 1U;
+    s.overflow_valid = overflow.get().valid;
+    s.alu_input = alu_input.get();
+    s.wb = wb.get();
+    s.mem = mem.get();
+    s.fault = fault.get();
+    return s;
+}
+
+TICK_IMPL() {
+    if (fase_phase == 2U) fase_phase.setnext(0U);
+    if (fase_phase == 1U && !unsupported && !trapped && inst_fifo.enqready()) {
+        Instruction item;
+        item.inst = fase_raw;
+        item.pc = input_pc;
+        inst_fifo.enqnext(item);
+        input_pc.setnext(input_pc + 4ULL);
+        fase_phase.setnext(2U);
+    }
+    AluInput current_alu = alu_input.get();
+    AluInput next_alu = current_alu;
+    Writeback current_wb = wb.get();
+    Writeback next_wb = current_wb;
+    Writeback current_overflow = overflow.get();
+    Writeback next_overflow = current_overflow;
+    MemState current_mem = mem.get();
+    MemState next_mem = current_mem;
+    uint32_t current_busy = busy;
+    uint32_t next_busy = current_busy;
+    uint32_t current_commit = commit_batch;
+    uint32_t current_issue = issue_batch;
+    bool completed = false;
+    bool issued = false;
+    bool flush = false;
+
+    // Only registered FU results are considered for WB this cycle.
+    bool mem_boundary_ready = current_mem.phase == MEM_DONE &&
+        current_mem.batch == current_commit && in_flight[current_commit] == 1U;
+    if (!trapped && mem_boundary_ready && current_mem.error) {
+        TrapInfo info;
+        info.valid = true;
+        info.pc = current_mem.pc;
+        info.address = current_mem.address;
+        info.cause = current_mem.cause;
+        info.batch = current_mem.batch;
+        trap(info);
+        fault.setnext(info);
+        trapped.setnext(true);
+        flush = true;
+    }
+
+    uint32_t selected = 0U;
+    uint32_t selected_index = 0U;
+    Writeback candidate = empty_wb();
+    if (!trapped && !flush) {
+        for (uint32_t offset = 0; offset < WB_ENTRIES; ++offset) {
+            uint32_t i = (static_cast<uint32_t>(wb_cursor) + offset) & 7U;
+            if (selected == 0U && pending[i].valid &&
+                pending[i].batch == current_commit) {
+                selected = 1U;
+                selected_index = i;
+                candidate = pending[i];
+            }
+        }
+        if (selected == 0U && current_overflow.valid &&
+            current_overflow.batch == current_commit) {
+            selected = 2U;
+            candidate = current_overflow;
+        }
+        // The older LSU completion remains able to progress even when
+        // younger results have occupied the overflow slot.
+        if (selected == 0U && mem_boundary_ready && !current_mem.error) {
+            selected = 3U;
+            candidate.valid = true;
+            candidate.inst = current_mem.inst;
+            candidate.pc = current_mem.pc;
+            candidate.batch = current_mem.batch;
+            candidate.rd = current_mem.rd;
+            candidate.writes_rd = current_mem.writes_rd;
+            candidate.is_mem = true;
+            candidate.data = current_mem.data;
+        }
+        if (selected == 0U && !current_overflow.valid &&
+            current_wb.valid && current_wb.batch == current_commit) {
+            selected = 4U;
+            candidate = current_wb;
+        }
+
+        if (selected != 0U) {
+            if (result(candidate)) {
+                completed = true;
+                write_reg(candidate.rd, candidate.data, candidate.writes_rd);
+                if (candidate.writes_rd)
+                    next_busy = next_busy & ~(1U << candidate.rd);
+                if (selected == 1U) {
+                    pending.setnext<0>(selected_index, empty_wb());
+                    wb_cursor.setnext((selected_index + 1U) & 7U);
+                }
+                if (selected == 2U) next_overflow.valid = false;
+                if (selected == 3U) {
+                    next_mem = empty_mem();
+                    commit_batch.setnext((current_commit + 1U) & BATCH_MASK);
+                }
+                if (selected == 4U) next_wb.valid = false;
+            }
+        }
+
+        // WB admission allocates storage only after an actual completion.
+        // No slot is reserved in ID. Occupied overflow blocks new admission.
+        if (!current_overflow.valid && current_wb.valid &&
+            !(completed && selected == 4U)) {
+            bool found = false;
+            uint32_t free_index = 0;
+            for (uint32_t i = 0; i < WB_ENTRIES; ++i) {
+                if (!found && !pending[i].valid) {
+                    found = true;
+                    free_index = i;
+                }
+            }
+            if (found) pending.setnext<1>(free_index, current_wb);
+            else next_overflow = current_wb;
+            next_wb.valid = false;
+        }
+
+        if (current_mem.phase == MEM_ADDRESS) {
+            bool misaligned = false;
+            uint64_t address = 0;
+            calculate_address(current_mem.base, current_mem.offset,
+                              current_mem.bytes, address, misaligned);
+            next_mem.address = address;
+            if (misaligned) {
+                next_mem.error = true;
+                next_mem.cause = current_mem.is_store ? 6U : 4U;
+                next_mem.phase = MEM_DONE;
+            } else next_mem.phase = MEM_REQUEST;
+        } else if (current_mem.phase == MEM_REQUEST) {
+            MemRequest req;
+            req.address = current_mem.address;
+            req.wdata = current_mem.store_data;
+            req.bytes = current_mem.bytes;
+            req.write = current_mem.is_store;
+            req.batch = current_mem.batch;
+            if (mem_req(req)) next_mem.phase = MEM_RESPONSE;
+        } else if (current_mem.phase == MEM_RESPONSE) {
+            MemResponse resp;
+            resp.rdata = 0;
+            resp.error = false;
+            if (mem_resp(resp)) {
+                next_mem.error = resp.error;
+                next_mem.cause = current_mem.is_store ? 7U : 5U;
+                next_mem.data = 0;
+                if (!current_mem.is_store) {
+                    uint64_t data = 0;
+                    extend_load(resp.rdata, current_mem.bytes, current_mem.load_unsigned, data);
+                    next_mem.data = data;
+                }
+                next_mem.phase = MEM_DONE;
+            }
+        }
+
+        if (!current_overflow.valid && !next_overflow.valid &&
+            current_alu.valid && !next_wb.valid) {
+            uint64_t data = 0;
+            execute_alu(current_alu.alu_op, current_alu.op1, current_alu.op2, data);
+            next_wb.valid = true;
+            next_wb.inst = current_alu.inst;
+            next_wb.pc = current_alu.pc;
+            next_wb.batch = current_alu.batch;
+            next_wb.rd = current_alu.rd;
+            next_wb.writes_rd = current_alu.writes_rd;
+            next_wb.is_mem = false;
+            next_wb.data = data;
+            next_alu.valid = false;
+        }
+
+        if (!unsupported && !current_overflow.valid && !next_overflow.valid &&
+            inst_fifo.deqvalid()) {
+            Instruction item = inst_fifo.front();
+            DecodedInst dec;
+            decode_inst(item.inst, dec);
+            bool use_rs2 = dec.is_store || !dec.use_imm;
+            bool raw1 = dec.rs1 != 0U && (current_busy & (1U << dec.rs1)) != 0U;
+            bool raw2 = use_rs2 && dec.rs2 != 0U &&
+                (current_busy & (1U << dec.rs2)) != 0U;
+            bool waw = dec.writes_rd && (current_busy & (1U << dec.rd)) != 0U;
+            bool resource_ready = dec.is_mem ?
+                (current_mem.phase == MEM_IDLE && current_issue == current_commit) :
+                !next_alu.valid;
+            if (!dec.legal) unsupported.setnext(true);
+            else if (!raw1 && !raw2 && !waw && resource_ready) {
+                RegReadPair operands;
+                uint64_t imm = 0;
+                read_regs(true, dec.rs1, use_rs2, dec.rs2, operands);
+                generate_imm(item.inst, imm);
+                if (dec.is_mem) {
+                    next_mem = empty_mem();
+                    next_mem.phase = MEM_ADDRESS;
+                    next_mem.inst = item.inst;
+                    next_mem.pc = item.pc;
+                    next_mem.batch = current_issue;
+                    next_mem.rd = dec.rd;
+                    next_mem.writes_rd = dec.writes_rd;
+                    next_mem.is_store = dec.is_store;
+                    next_mem.load_unsigned = dec.load_unsigned;
+                    next_mem.bytes = dec.mem_bytes;
+                    next_mem.base = operands.rs1_val;
+                    next_mem.offset = imm;
+                    next_mem.store_data = dec.is_store ? operands.rs2_val : 0ULL;
+                    issue_batch.setnext((current_issue + 1U) & BATCH_MASK);
+                } else {
+                    next_alu.valid = true;
+                    next_alu.inst = item.inst;
+                    next_alu.pc = item.pc;
+                    next_alu.batch = current_issue;
+                    next_alu.alu_op = dec.alu_op;
+                    next_alu.op1 = operands.rs1_val;
+                    next_alu.op2 = dec.use_imm ? imm : operands.rs2_val;
+                    next_alu.rd = dec.rd;
+                    next_alu.writes_rd = dec.writes_rd;
+                }
+                if (dec.writes_rd) {
+                    next_busy = next_busy | (1U << dec.rd);
+                    producer_batch.setnext<0>(dec.rd, current_issue);
+                }
+                issued = true;
+                inst_fifo.deqnext();
+            }
+        }
+
+        if (completed && !(issued && current_issue == current_commit)) {
+            in_flight.setnext<0>(current_commit, in_flight[current_commit] - 1U);
+        }
+        if (issued) {
+            uint32_t count = in_flight[current_issue] + 1U;
+            if (completed && current_issue == current_commit) count = count - 1U;
+            in_flight.setnext<1>(current_issue, count);
+        }
+    }
+
+    if (flush) {
+        fase_phase.setnext(0U);
+        // The faulting Mem is the last instruction of the oldest batch.
+        // Its predecessors have all submitted; all remaining work is younger.
+        for (uint32_t i = 1; i < 32; ++i) {
+            uint32_t distance = (producer_batch[i] - current_commit) & BATCH_MASK;
+            if ((distance != 0U && distance < BATCH_COUNT / 2U) ||
+                (current_mem.writes_rd && current_mem.rd == i))
+                next_busy = next_busy & ~(1U << i);
+        }
+        next_alu = empty_alu();
+        next_wb = empty_wb();
+        next_overflow = empty_wb();
+        next_mem = empty_mem();
+        pending.resetnext();
+        in_flight.resetnext();
+        inst_fifo.clrnext();
+    }
+
+    busy.setnext(next_busy & 0xfffffffeU);
+    alu_input.setnext(next_alu);
+    wb.setnext(next_wb);
+    overflow.setnext(next_overflow);
+    mem.setnext(next_mem);
+}

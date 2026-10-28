@@ -1,0 +1,100 @@
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#include <defhelper.hpp>
+#include <run.hpp>
+#include "header.uh"
+TOP("./TopModule.vul");
+PROJECT(".");
+REQUEST(push_inst, handshake=1, ARG(uint32_t) inst);
+REQUEST(fase_inject, handshake=0,
+    ARG(bool) inst64, ARG(uint32_t) inst64_raw, ARG(bool) inst64_nowait,
+    RESP(bool) inst64_ready, RESP(bool) inst64_busy);
+QUERY(status, CoreStatus);
+GLOBAL() {
+    bool allow_wb = false;
+    unsigned received = 0;
+    unsigned cycle = 0;
+    unsigned checks = 0;
+    std::vector<uint32_t> expected;
+}
+SERVICE(result, handshake=1, ready=allow_wb, ARG(Writeback) wb) {
+    if (received >= expected.size() || wb.inst != expected[received] ||
+        wb.pc != received * 4ULL || wb.data != ((wb.inst >> 20) & 0x7ffU)) {
+        std::printf("FAIL unexpected/duplicate/reordered WB at %u\n", received);
+        std::exit(1);
+    }
+    ++received;
+}
+SERVICE(mem_req, handshake=1, ready=false, ARG(MemRequest) req) {}
+SERVICE(mem_resp, handshake=1, ready=false, RESP(MemResponse) resp) {
+    resp.rdata = 0; resp.error = false;
+}
+SERVICE(trap, ARG(TrapInfo) info) { std::printf("FAIL trap\n"); std::exit(1); }
+SIMULATION() {
+    auto check = [&](bool ok, const char* message) {
+        ++checks;
+        if (!ok) { std::printf("FAIL cycle=%u %s\n", cycle, message); std::exit(1); }
+    };
+    auto step = [&]() { sim_nextcycle(); ++cycle; check(cycle < 500, "timeout"); };
+    auto instr = [&](unsigned n) { return (n << 20) | 0x93U; }; // addi x1,x0,n
+    auto call = [&](bool valid, uint32_t raw, bool nowait, unsigned phase) {
+        bool ready = false, busy = false;
+        fase_inject(valid, raw, nowait, ready, busy);
+        if (ready != (phase == 2)) std::printf("phase=%u actual_phase=%u ready=%u busy=%u\n", phase, status().fase_phase, ready, busy);
+        check(ready == (phase == 2), "ACK timing");
+        check(busy == (phase == 1), "busy timing");
+    };
+    // Empty FIFO: capture, admit, ACK. Keep request asserted through ACK.
+    uint32_t first = instr(11);
+    call(true, first, false, 0); step();
+    call(true, first, false, 1);
+    check(!push_inst(instr(99)), "FASE pending must block normal ingress");
+    expected.push_back(first); step();
+    call(true, first, false, 2); step();
+    call(false, 0, false, 0); step();
+    // Fill FIFO behind WAW-blocked instructions while WB is held.
+    bool full = false;
+    for (unsigned i = 0; i < 12 && !full; ++i) {
+        uint32_t raw = instr(20 + i);
+        if (push_inst(raw)) expected.push_back(raw); else full = true;
+        step();
+    }
+    check(full, "FIFO must reach backpressure");
+    uint32_t second = instr(77);
+    call(true, second, true, 0); step();
+    for (unsigned i = 0; i < 4; ++i) {
+        call(true, second, true, 1);
+        check(!push_inst(instr(99)), "normal cannot compete with pending FASE");
+        CoreStatus s = status();
+        check(s.fase_raw == second && s.fase_nowait, "latched request retained");
+        step();
+    }
+    allow_wb = true;
+    expected.push_back(second);
+    bool ack = false;
+    while (!ack) {
+        CoreStatus s = status();
+        call(true, second, true, s.fase_phase);
+        ack = s.fase_phase == 2;
+        step();
+    }
+    call(false, 0, false, 0); step();
+    // Normal and FASE capture may coexist in IDLE; normal enters first.
+    uint32_t normal = instr(88), third = instr(89);
+    check(push_inst(normal), "normal ingress restored"); expected.push_back(normal);
+    call(true, third, false, 0); step();
+    expected.push_back(third);
+    ack = false;
+    while (!ack) {
+        CoreStatus s = status();
+        call(true, third, false, s.fase_phase);
+        ack = s.fase_phase == 2;
+        step();
+    }
+    call(false, 0, false, 0); step();
+    while (received < expected.size()) step();
+    for (unsigned i = 0; i < 12; ++i) { call(false, 0, false, 0); step(); }
+    check(received == expected.size(), "exactly once");
+    std::printf("PASS FASE FIFO handshake cycles=%u checks=%u instructions=%u\n", cycle, checks, received);
+}

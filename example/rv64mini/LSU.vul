@@ -1,0 +1,34 @@
+#pragma once
+
+#include "header.uh"
+
+INTERFACE() {
+    SERVICE(address, ARG(uint64_t) base, ARG(uint64_t) offset,
+        ARG(uint32_t) bytes, RESP(uint64_t) addr, RESP(bool) misaligned);
+    SERVICE(extend, ARG(uint64_t) raw, ARG(uint32_t) bytes,
+        ARG(bool) is_unsigned, RESP(uint64_t) data);
+}
+
+SERVICE(address, ARG(uint64_t) base, ARG(uint64_t) offset,
+    ARG(uint32_t) bytes, RESP(uint64_t) addr, RESP(bool) misaligned) {
+    addr = base + offset;
+    misaligned = (addr & static_cast<uint64_t>(bytes - 1U)) != 0ULL;
+}
+
+SERVICE(extend, ARG(uint64_t) raw, ARG(uint32_t) bytes,
+    ARG(bool) is_unsigned, RESP(uint64_t) data) {
+    data = raw;
+    if (bytes == 1U) {
+        data = raw & 0xffULL;
+        if (!is_unsigned && (data & 0x80ULL) != 0ULL)
+            data = data | 0xffffffffffffff00ULL;
+    } else if (bytes == 2U) {
+        data = raw & 0xffffULL;
+        if (!is_unsigned && (data & 0x8000ULL) != 0ULL)
+            data = data | 0xffffffffffff0000ULL;
+    } else if (bytes == 4U) {
+        data = raw & 0xffffffffULL;
+        if (!is_unsigned && (data & 0x80000000ULL) != 0ULL)
+            data = data | 0xffffffff00000000ULL;
+    }
+}

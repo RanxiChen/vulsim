@@ -1,0 +1,172 @@
+#include <cstdio>
+#include <cstdlib>
+#include <defhelper.hpp>
+#include <run.hpp>
+#include "header.uh"
+
+TOP("./RegisterFile.vul");
+PROJECT(".");
+
+REQUEST(read2, ARG(bool) ren1, ARG(uint32_t) rs1,
+        ARG(bool) ren2, ARG(uint32_t) rs2, RESP(RegReadPair) out);
+REQUEST(write, ARG(uint32_t) rd, ARG(uint64_t) data, ARG(bool) wen);
+REQUEST(fase_access, handshake=0,
+        ARG(bool) rd_en, ARG(bool) wr_en,
+        ARG(uint32_t) idx, ARG(uint64_t) wdata,
+        RESP(bool) busy, RESP(uint64_t) rdata);
+
+SIMULATION() {
+    uint64_t expected[32] = {};
+    unsigned cycle = 0;
+    unsigned checks = 0;
+
+    auto check = [&](const char* name, const char* field,
+                     uint64_t got, uint64_t want) {
+        ++checks;
+        if (got != want) {
+            std::printf("FAIL cycle=%u case=%s field=%s got=0x%llx want=0x%llx\n",
+                        cycle, name, field,
+                        static_cast<unsigned long long>(got),
+                        static_cast<unsigned long long>(want));
+            std::exit(1);
+        }
+    };
+
+    // All observations below happen BEFORE sim_nextcycle().
+    // The independent state model changes only AFTER that cycle boundary.
+    auto step = [&](const char* name,
+                    bool ren1, uint32_t rs1, bool ren2, uint32_t rs2,
+                    bool wen, uint32_t rd, uint64_t wdata,
+                    bool fr, bool fw, uint32_t fi, uint64_t fd,
+                    bool want_busy) {
+        RegReadPair out;
+        out.rs1_val = ~0ULL;
+        out.rs2_val = ~0ULL;
+        bool busy = !want_busy;
+        uint64_t rdata = ~0ULL;
+
+        read2(ren1, rs1, ren2, rs2, out);
+        write(rd, wdata, wen);
+        fase_access(fr, fw, fi, fd, busy, rdata);
+
+        check(name, "normal read1 before tick", out.rs1_val,
+              ren1 ? expected[rs1] : 0ULL);
+        check(name, "normal read2 before tick", out.rs2_val,
+              ren2 ? expected[rs2] : 0ULL);
+        check(name, "combinational busy", busy, want_busy);
+        check(name, "FASE read before tick", rdata,
+              fr && !want_busy ? expected[fi] : 0ULL);
+
+        sim_nextcycle();
+        ++cycle;
+        if (wen && rd != 0U)
+            expected[rd] = wdata;
+        if (fw && !want_busy && fi != 0U)
+            expected[fi] = fd;
+    };
+
+    auto observe = [&](const char* name, uint32_t a, uint32_t b) {
+        step(name, true, a, true, b,
+             false, 0, 0, false, false, 0, 0, false);
+    };
+
+    for (uint32_t i = 0; i < 32; i += 2)
+        observe("reset all registers", i, i + 1);
+
+    for (uint32_t i = 1; i < 32; ++i) {
+        step("normal write: old value this cycle", true, i, true, 0,
+             true, i, 0x1234567800000000ULL + i,
+             false, false, 0, 0, false);
+        observe("normal write: visible next cycle", i, 0);
+    }
+
+    step("read1 only", true, 1, false, 2,
+         false, 0, 0, false, false, 0, 0, false);
+    step("read2 only", false, 1, true, 2,
+         false, 0, 0, false, false, 0, 0, false);
+    step("reads disabled", false, 1, false, 2,
+         false, 0, 0, false, false, 0, 0, false);
+    observe("dual read same register", 3, 3);
+
+    step("normal write disabled", true, 3, true, 0,
+         false, 3, 0xBADULL, false, false, 0, 0, false);
+    observe("disabled write unchanged", 3, 0);
+    step("normal write x0 ignored", true, 0, true, 3,
+         true, 0, ~0ULL, false, false, 0, 0, false);
+    observe("x0 remains zero", 0, 3);
+
+    step("FASE idle despite normal traffic", true, 1, true, 2,
+         true, 3, 0x3333ULL, false, false, 4, ~0ULL, false);
+    observe("idle FASE has no effect", 3, 4);
+
+    step("FASE immediate read", false, 0, false, 0,
+         false, 0, 0, true, false, 1, 0, false);
+    step("FASE read x0", false, 0, false, 0,
+         false, 0, 0, true, false, 0, 0, false);
+
+    // Each loop keeps fr/fi unchanged throughout three blocked cycles
+    // and the completion cycle. Addresses cover equal and unequal cases.
+    for (unsigned same = 0; same < 2; ++same) {
+        uint32_t fi = same ? 1 : 5;
+        for (unsigned mode = 1; mode <= 3; ++mode) {
+            step("held FASE read: busy immediately",
+                 (mode & 1) != 0, 1, (mode & 2) != 0, 1,
+                 false, 0, 0, true, false, fi, 0, true);
+        }
+        step("held FASE read: completes as ports become idle",
+             false, 1, false, 1, false, 0, 0,
+             true, false, fi, 0, false);
+        step("FASE read deasserted after completion",
+             false, 0, false, 0, false, 0, 0,
+             false, false, fi, 0, false);
+    }
+
+    for (unsigned same = 0; same < 2; ++same) {
+        uint32_t fi = same ? 6 : 7;
+        for (unsigned wait = 0; wait < 3; ++wait) {
+            step("held FASE write: normal write wins",
+                 true, fi, true, 6, true, 6, 0x6000ULL + wait,
+                 false, true, fi, 0xFACEULL, true);
+        }
+        step("held FASE write: accept, still old value before tick",
+             true, fi, true, 6, false, 0, 0,
+             false, true, fi, 0xFACEULL, false);
+        observe("FASE write visible next cycle", fi, 6);
+    }
+
+    step("normal reads plus FASE write: no conflict",
+         true, 8, true, 9, false, 0, 0,
+         false, true, 8, 0x8888ULL, false);
+    observe("parallel FASE write visible next cycle", 8, 9);
+
+    step("normal write plus FASE read same address: old data",
+         false, 0, false, 0, true, 9, 0x9999ULL,
+         true, false, 9, 0, false);
+    step("FASE read sees normal write next cycle",
+         false, 0, false, 0, false, 0, 0,
+         true, false, 9, 0, false);
+    step("normal write plus FASE read different address",
+         false, 0, false, 0, true, 10, 0xAAAAULL,
+         true, false, 9, 0, false);
+    observe("parallel normal write visible next cycle", 10, 9);
+
+    step("disabled normal write does not block FASE write",
+         true, 11, true, 12, false, 11, ~0ULL,
+         false, true, 11, 0xBBBBULL, false);
+    observe("FASE write despite disabled normal write", 11, 12);
+
+    step("normal x0 write does not block FASE write",
+         true, 12, true, 0, true, 0, ~0ULL,
+         false, true, 12, 0xCCCCULL, false);
+    observe("FASE write with normal x0 write", 12, 0);
+
+    step("FASE x0 write ignored", true, 0, true, 1,
+         false, 0, 0, false, true, 0, ~0ULL, false);
+    observe("FASE cannot change x0", 0, 1);
+
+    for (uint32_t i = 0; i < 32; i += 2)
+        observe("final full register sweep", i, i + 1);
+
+    std::printf("PASS: RegisterFile timing/conflict checks cycles=%u checks=%u\n",
+                cycle, checks);
+}

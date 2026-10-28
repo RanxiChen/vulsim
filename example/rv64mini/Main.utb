@@ -1,0 +1,396 @@
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#include <defhelper.hpp>
+#include <run.hpp>
+#include "header.uh"
+
+TOP("./TopModule.vul");
+PROJECT(".");
+REQUEST(push_inst, handshake=1, ARG(uint32_t) inst);
+QUERY(status, CoreStatus);
+
+GLOBAL() {
+    std::vector<uint32_t> program;
+    std::vector<uint64_t> expected_data;
+    std::vector<unsigned> expected_batch;
+    std::vector<unsigned> remaining;
+    std::vector<bool> submitted;
+    std::vector<MemRequest> expected_requests;
+    uint8_t memory[4096] = {};
+    bool allow_wb = false;
+    bool request_ready = false;
+    bool response_valid = false;
+    bool memory_pending = false;
+    MemRequest active_request;
+    unsigned response_due = 0;
+    unsigned response_latency = 0;
+    unsigned cycle = 0;
+    unsigned received = 0;
+    unsigned requests = 0;
+    unsigned responses = 0;
+    unsigned retiring_batch = 0;
+    unsigned observed_commit = 0;
+    unsigned checks = 0;
+    unsigned test_case = 0;
+    bool expect_trap = false;
+    bool trap_seen = false;
+    uint64_t trap_pc = 0;
+    uint64_t trap_address = 0;
+    uint32_t trap_cause = 0;
+    unsigned trap_batch = 0;
+}
+
+SERVICE(result, handshake=1, ready=allow_wb, ARG(Writeback) wb) {
+    unsigned index = static_cast<unsigned>(wb.pc / 4ULL);
+    if (!wb.valid || index >= program.size() || submitted[index] ||
+        (expect_trap && wb.pc >= trap_pc) ||
+        wb.inst != program[index] || wb.data != expected_data[index] ||
+        wb.batch != (expected_batch[index] & 1023U) ||
+        expected_batch[index] != retiring_batch ||
+        wb.is_mem != (((wb.inst & 0x7fU) == 0x03U) || ((wb.inst & 0x7fU) == 0x23U)) ||
+        wb.writes_rd != (((wb.inst & 0x7fU) != 0x23U) && (((wb.inst >> 7) & 31U) != 0U))) {
+        std::printf("FAIL case=%u cycle=%u WB pc=%llu inst=%08x batch=%u retiring=%u data=%llx\n",
+                    test_case, cycle, static_cast<unsigned long long>(wb.pc),
+                    wb.inst, wb.batch, retiring_batch, static_cast<unsigned long long>(wb.data));
+        std::exit(1);
+    }
+    if (wb.writes_rd && wb.rd != ((wb.inst >> 7) & 31U)) {
+        std::printf("FAIL: WB destination\n"); std::exit(1);
+    }
+    submitted[index] = true;
+    ++received;
+    --remaining[retiring_batch];
+    if (wb.is_mem) {
+        if (remaining[retiring_batch] != 0U) {
+            std::printf("FAIL: boundary submitted before its predecessors\n"); std::exit(1);
+        }
+        ++retiring_batch;
+    }
+}
+
+SERVICE(mem_req, handshake=1, ready=request_ready, ARG(MemRequest) req) {
+    if (memory_pending || requests >= expected_requests.size()) {
+        std::printf("FAIL: duplicate or unexpected memory request\n"); std::exit(1);
+    }
+    MemRequest want = expected_requests[requests];
+    if (req.address != want.address || req.bytes != want.bytes ||
+        req.write != want.write || req.batch != want.batch ||
+        (req.write && req.wdata != want.wdata) ||
+        req.batch != observed_commit) {
+        std::printf("FAIL case=%u cycle=%u mem req[%u] addr=%llu bytes=%u write=%u batch=%u commit=%u\n",
+                    test_case, cycle, requests,
+                    static_cast<unsigned long long>(req.address), req.bytes,
+                    req.write, req.batch, observed_commit);
+        std::exit(1);
+    }
+    active_request = req;
+    memory_pending = true;
+    response_due = cycle + response_latency;
+    ++requests;
+}
+
+SERVICE(mem_resp, handshake=1, ready=response_valid, RESP(MemResponse) resp) {
+    if (!memory_pending) {
+        std::printf("FAIL: response without request\n"); std::exit(1);
+    }
+    resp.error = expect_trap && active_request.address == trap_address &&
+                 (trap_cause == 5U || trap_cause == 7U);
+    resp.rdata = 0;
+    if (!resp.error) {
+        for (uint32_t i = 0; i < active_request.bytes; ++i) {
+            unsigned address = static_cast<unsigned>(active_request.address) + i;
+            if (active_request.write)
+                memory[address] = static_cast<uint8_t>(active_request.wdata >> (i * 8U));
+            else resp.rdata |= static_cast<uint64_t>(memory[address]) << (i * 8U);
+        }
+    }
+    memory_pending = false;
+    ++responses;
+}
+
+SERVICE(trap, ARG(TrapInfo) info) {
+    if (!expect_trap || trap_seen || !info.valid ||
+        info.pc != trap_pc || info.address != trap_address ||
+        info.cause != trap_cause || info.batch != (trap_batch & 1023U)) {
+        std::printf("FAIL case=%u unexpected trap pc=%llu addr=%llu cause=%u batch=%u\n",
+                    test_case, static_cast<unsigned long long>(info.pc),
+                    static_cast<unsigned long long>(info.address), info.cause, info.batch);
+        std::exit(1);
+    }
+    for (unsigned i = 0; i < trap_pc / 4ULL; ++i) {
+        if (!submitted[i]) {
+            std::printf("FAIL: trap before older instruction submitted\n"); std::exit(1);
+        }
+    }
+    trap_seen = true;
+}
+
+SIMULATION() {
+    unsigned total_checks = 0;
+    unsigned full_seen = 0, overflow_seen = 0, overflow_mem_progress = 0;
+    unsigned held_requests = 0, late_mem_stalls = 0, wraps = 0;
+
+    auto check = [&](bool ok, const char* message) {
+        ++checks;
+        if (!ok) {
+            std::printf("FAIL case=%u cycle=%u %s\n", test_case, cycle, message);
+            std::exit(1);
+        }
+    };
+
+    for (test_case = 0; test_case < 5; ++test_case) {
+        allow_wb = false; request_ready = false; response_valid = false;
+        memory_pending = false; trap_seen = false;
+        sim_reset();
+        program.clear(); expected_data.clear(); expected_batch.clear();
+        remaining.clear(); submitted.clear(); expected_requests.clear();
+        remaining.push_back(0);
+        received = 0; requests = 0; responses = 0;
+        retiring_batch = 0; observed_commit = 0; checks = 0; cycle = 0;
+        expect_trap = test_case != 0;
+        response_latency = 40;
+        uint64_t reference[32] = {};
+        uint8_t reference_memory[4096];
+        for (unsigned i = 0; i < 4096; ++i) {
+            memory[i] = static_cast<uint8_t>(i * 37U + 0x80U);
+            reference_memory[i] = memory[i];
+        }
+        unsigned batch = 0;
+
+        auto calculate = [](uint32_t inst, uint64_t a, uint64_t b) -> uint64_t {
+            uint32_t f3 = (inst >> 12) & 7U;
+            bool reg = (inst & 0x7fU) == 0x33U;
+            bool special = ((inst >> 30) & 1U) != 0U;
+            if (f3 == 0U) return reg && special ? a - b : a + b;
+            if (f3 == 1U) return a << (b & 63ULL);
+            if (f3 == 2U) return static_cast<int64_t>(a) < static_cast<int64_t>(b) ? 1ULL : 0ULL;
+            if (f3 == 3U) return a < b ? 1ULL : 0ULL;
+            if (f3 == 4U) return a ^ b;
+            if (f3 == 5U) return special ?
+                static_cast<uint64_t>(static_cast<int64_t>(a) >> (b & 63ULL)) : a >> (b & 63ULL);
+            if (f3 == 6U) return a | b;
+            return a & b;
+        };
+
+        auto append = [&](uint32_t inst) {
+            unsigned opcode = inst & 0x7fU;
+            bool is_mem = opcode == 3U || opcode == 0x23U;
+            bool store = opcode == 0x23U;
+            uint32_t rs1 = (inst >> 15) & 31U;
+            uint32_t rs2 = (inst >> 20) & 31U;
+            uint32_t rd = (inst >> 7) & 31U;
+            uint32_t f3 = (inst >> 12) & 7U;
+            int32_t immediate = static_cast<int32_t>(inst) >> 20;
+            if (store) {
+                uint32_t raw = ((inst >> 25) << 5) | ((inst >> 7) & 31U);
+                immediate = (raw & 0x800U) ? static_cast<int32_t>(raw) - 4096 : static_cast<int32_t>(raw);
+            }
+            uint64_t data = 0;
+            if (is_mem) {
+                MemRequest req;
+                req.address = reference[rs1] + static_cast<uint64_t>(static_cast<int64_t>(immediate));
+                req.bytes = 1U << (f3 & 3U);
+                req.write = store;
+                req.wdata = store ? reference[rs2] : 0;
+                req.batch = batch & 1023U;
+                bool is_fault = expect_trap && program.size() * 4ULL == trap_pc;
+                if ((req.address & (req.bytes - 1U)) == 0ULL)
+                    expected_requests.push_back(req);
+                if (!is_fault) {
+                    for (unsigned i = 0; i < req.bytes; ++i) {
+                        unsigned a = static_cast<unsigned>(req.address) + i;
+                        if (store) reference_memory[a] = static_cast<uint8_t>(req.wdata >> (8U * i));
+                        else data |= static_cast<uint64_t>(reference_memory[a]) << (8U * i);
+                    }
+                    if (!store && f3 < 4U && req.bytes < 8U) {
+                        unsigned bits = req.bytes * 8U;
+                        if (((data >> (bits - 1U)) & 1ULL) != 0ULL) data |= ~0ULL << bits;
+                    }
+                }
+            } else {
+                uint64_t b = opcode == 0x13U ?
+                    static_cast<uint64_t>(static_cast<int64_t>(immediate)) : reference[rs2];
+                data = calculate(inst, reference[rs1], b);
+            }
+            program.push_back(inst);
+            expected_data.push_back(data);
+            expected_batch.push_back(batch);
+            submitted.push_back(false);
+            ++remaining[batch];
+            if (!store && rd != 0U) reference[rd] = data;
+            if (is_mem) {
+                ++batch;
+                remaining.push_back(0);
+            }
+        };
+        auto ri = [&](unsigned rd, unsigned rs1, unsigned f3, int imm) {
+            append(((static_cast<uint32_t>(imm) & 0xfffU) << 20) |
+                   (rs1 << 15) | (f3 << 12) | (rd << 7) | 0x13U);
+        };
+        auto rr = [&](unsigned rd, unsigned rs1, unsigned rs2, unsigned f3, unsigned f7) {
+            append((f7 << 25) | (rs2 << 20) | (rs1 << 15) |
+                   (f3 << 12) | (rd << 7) | 0x33U);
+        };
+        auto load = [&](unsigned rd, unsigned rs1, unsigned f3, int imm) {
+            append(((static_cast<uint32_t>(imm) & 0xfffU) << 20) |
+                   (rs1 << 15) | (f3 << 12) | (rd << 7) | 3U);
+        };
+        auto store = [&](unsigned rs2, unsigned rs1, unsigned f3, int imm) {
+            unsigned raw = static_cast<unsigned>(imm) & 0xfffU;
+            append(((raw >> 5) << 25) | (rs2 << 20) | (rs1 << 15) |
+                   (f3 << 12) | ((raw & 31U) << 7) | 0x23U);
+        };
+
+        ri(1, 0, 0, 128);
+        if (test_case == 0) {
+            load(31, 1, 3, 0);
+            for (unsigned i = 2; i <= 24; ++i) ri(i, 0, 0, static_cast<int>(i));
+            load(30, 1, 0, 0);
+            ri(2, 0, 0, -1);
+            ri(3, 0, 0, 32);
+            ri(4, 0, 0, 63);
+            for (unsigned f3 = 0; f3 < 8; ++f3) rr(10 + f3, 2, 4, f3, 0);
+            rr(18, 1, 2, 0, 0x20);
+            rr(19, 2, 4, 5, 0x20);
+            rr(20, 2, 0, 5, 0x20);
+            ri(5, 0, 0, 7);
+            ri(5, 0, 0, 9);
+            rr(6, 5, 4, 0, 0);
+            rr(0, 6, 6, 0, 0);
+            for (unsigned f3 = 0; f3 < 8; ++f3) {
+                int imm = (f3 == 1 || f3 == 5) ? 63 : -2048;
+                ri(10 + f3, 2, f3 == 1 ? 1 : f3, imm);
+            }
+            // funct3=1/5 shifts cover both shamt[5] and sign extension.
+            ri(21, 1, 1, 32); ri(22, 2, 5, 0x400 | 63);
+            ri(23, 2, 5, 0x400);
+            for (unsigned f3 = 0; f3 < 4; ++f3) {
+                int offset = static_cast<int>(f3 * 16U);
+                store(2, 1, f3, offset);
+                load(24, 1, f3, offset);
+                if (f3 < 3) load(25, 1, f3 + 4U, offset);
+            }
+            store(4, 1, 3, -8);
+            load(26, 1, 3, -8);
+            load(0, 1, 3, 0);
+            // More than 1024 boundaries exercise the ring-ID wrap.
+            for (unsigned i = 0; i < 1030; ++i) load(27, 1, 3, 0);
+            rr(28, 27, 26, 0, 0);
+        } else {
+            // Older calculations must finish; all younger work is cancelled.
+            ri(2, 0, 0, 123);
+            ri(3, 0, 0, 456);
+            trap_pc = program.size() * 4ULL;
+            trap_batch = batch;
+            trap_address = (test_case <= 2) ? 129ULL : 128ULL;
+            trap_cause = test_case == 1 ? 4U : test_case == 2 ? 6U :
+                         test_case == 3 ? 5U : 7U;
+            if (test_case == 1 || test_case == 3)
+                load(31, 1, 3, static_cast<int>(trap_address - 128ULL));
+            else store(2, 1, 3, static_cast<int>(trap_address - 128ULL));
+            for (unsigned i = 4; i <= 24; ++i) ri(i, 0, 0, static_cast<int>(i));
+        }
+
+        unsigned sent = 0;
+        unsigned last_commit = 0;
+        bool finished = false;
+        for (cycle = 0; cycle < 100000; ++cycle) {
+            unsigned previous_received = received;
+            unsigned previous_requests = requests;
+            unsigned previous_responses = responses;
+            CoreStatus before = status();
+            observed_commit = before.commit_batch;
+            allow_wb = (cycle % 13U) >= 4U;
+            request_ready = !memory_pending && (cycle % 5U) >= 2U;
+            response_valid = memory_pending && cycle >= response_due;
+            if (before.commit_batch > 8U) response_latency = 2;
+            else response_latency = 40;
+            if (sent < program.size() && push_inst(program[sent])) ++sent;
+
+            if (before.pending_count == 8U) ++full_seen;
+            if (before.overflow_valid) ++overflow_seen;
+            if (before.mem.phase == MEM_REQUEST && !request_ready) ++held_requests;
+            if (before.head_valid && ((before.head_inst & 0x7fU) == 3U ||
+                (before.head_inst & 0x7fU) == 0x23U) &&
+                before.issue_batch != before.commit_batch) ++late_mem_stalls;
+
+            sim_nextcycle();
+            CoreStatus after = status();
+            check(!after.unsupported, "supported instruction decoded as unsupported");
+            check((after.busy & 1U) == 0U, "x0 busy");
+            check(after.pending_count <= 8U, "WB table capacity exceeded");
+            if (after.commit_in_flight >= 64U || after.issue_in_flight >= 64U)
+                std::printf("COUNTS before cb=%u ib=%u cc=%u ic=%u after cb=%u ib=%u cc=%u ic=%u received=%u->%u head=%08x alu=%u wb=%u mem=%u pending=%u overflow=%u\n",
+                    before.commit_batch, before.issue_batch, before.commit_in_flight, before.issue_in_flight,
+                    after.commit_batch, after.issue_batch, after.commit_in_flight, after.issue_in_flight,
+                    previous_received, received, before.head_inst, before.alu_input.valid, before.wb.valid,
+                    before.mem.phase, before.pending_count, before.overflow_valid);
+            check(after.commit_in_flight < 64U && after.issue_in_flight < 64U,
+                  "batch counter underflow or overflow");
+            check(requests <= responses + 1U, "more than one outstanding request");
+            check(responses <= requests, "response count exceeds request count");
+            check(received <= previous_received + 1U, "more than one register write per cycle");
+            if (requests > previous_requests)
+                check(before.mem.phase == MEM_REQUEST && request_ready,
+                      "request accepted outside request stage");
+            if (responses > previous_responses)
+                check(before.mem.phase == MEM_RESPONSE && response_valid,
+                      "response accepted outside wait stage");
+            if (before.mem.phase == MEM_REQUEST && !request_ready) {
+                check(after.mem.phase == MEM_REQUEST &&
+                      after.mem.address == before.mem.address &&
+                      after.mem.store_data == before.mem.store_data &&
+                      after.mem.bytes == before.mem.bytes,
+                      "request payload must remain stable under backpressure");
+            }
+            if (before.overflow_valid && !after.trapped) {
+                check(after.alu_input.valid == before.alu_input.valid &&
+                      (!before.alu_input.valid || after.alu_input.inst == before.alu_input.inst),
+                      "overflow must stop younger ALU input advancement");
+                check(after.wb.valid == before.wb.valid &&
+                      (!before.wb.valid || after.wb.inst == before.wb.inst),
+                      "overflow must stop new WB admissions");
+                if (before.mem.phase != after.mem.phase ||
+                    after.commit_batch != before.commit_batch) ++overflow_mem_progress;
+            }
+            if (after.commit_batch < last_commit) ++wraps;
+            last_commit = after.commit_batch;
+
+            if (expect_trap && after.trapped) {
+                check(trap_seen && after.fault.valid, "trap was not reported");
+                check(after.busy == 0U && after.pending_count == 0U &&
+                      !after.overflow_valid && !after.alu_input.valid && !after.wb.valid &&
+                      after.mem.phase == MEM_IDLE && !after.head_valid,
+                      "exception must cancel younger pipeline, WB entries and scoreboard");
+                check(after.commit_in_flight == 0U && after.issue_in_flight == 0U,
+                      "exception must clear batch counts");
+                check(!memory_pending, "exception left an outstanding request");
+                finished = true;
+                break;
+            }
+            if (!expect_trap && received == program.size() &&
+                !after.alu_input.valid && !after.wb.valid &&
+                after.pending_count == 0U && !after.overflow_valid &&
+                after.mem.phase == MEM_IDLE && !after.head_valid) {
+                check(after.busy == 0U && after.commit_in_flight == 0U &&
+                      after.issue_in_flight == 0U, "drained core has remaining busy/count");
+                check(requests == expected_requests.size() && responses == requests,
+                      "request/response loss or duplicate");
+                for (unsigned i = 0; i < 4096; ++i)
+                    check(memory[i] == reference_memory[i], "store memory contents");
+                finished = true;
+                break;
+            }
+        }
+        check(finished, "timeout");
+        total_checks += checks;
+        std::printf("PASS: case=%u instructions=%u requests=%u cycles=%u checks=%u\n",
+                    test_case, received, requests, cycle + 1U, checks);
+    }
+    check(full_seen && overflow_seen && overflow_mem_progress &&
+          held_requests && late_mem_stalls && wraps, "required coverage not reached");
+    std::printf("PASS: R/I+Mem total_checks=%u full=%u overflow=%u older-mem-progress=%u req-held=%u mem-batch-stall=%u wraps=%u\n",
+                total_checks, full_seen, overflow_seen, overflow_mem_progress,
+                held_requests, late_mem_stalls, wraps);
+}

@@ -1,0 +1,81 @@
+#pragma once
+
+#include "header.uh"
+
+INTERFACE() {
+    SERVICE(decode, ARG(uint32_t) inst, RESP(DecodedInst) out);
+}
+
+SERVICE(decode, ARG(uint32_t) inst, RESP(DecodedInst) out) {
+    uint32_t opcode = inst & 0x7fU;
+    uint32_t funct3 = (inst >> 12) & 7U;
+    uint32_t funct7 = (inst >> 25) & 0x7fU;
+    uint32_t funct6 = (inst >> 26) & 0x3fU;
+
+    out.legal = false;
+    out.use_imm = opcode == 0x13U || opcode == 0x03U || opcode == 0x23U;
+    out.is_mem = opcode == 0x03U || opcode == 0x23U;
+    out.is_store = opcode == 0x23U;
+    out.load_unsigned = false;
+    out.mem_bytes = 1U;
+    out.rs1 = (inst >> 15) & 31U;
+    out.rs2 = (inst >> 20) & 31U;
+    out.rd = (inst >> 7) & 31U;
+    out.alu_op = ALU_ADD;
+
+    if (opcode == 0x33U) {
+        if (funct7 == 0U) {
+            out.legal = true;
+            if (funct3 == 0U) out.alu_op = ALU_ADD;
+            else if (funct3 == 1U) out.alu_op = ALU_SLL;
+            else if (funct3 == 2U) out.alu_op = ALU_SLT;
+            else if (funct3 == 3U) out.alu_op = ALU_SLTU;
+            else if (funct3 == 4U) out.alu_op = ALU_XOR;
+            else if (funct3 == 5U) out.alu_op = ALU_SRL;
+            else if (funct3 == 6U) out.alu_op = ALU_OR;
+            else out.alu_op = ALU_AND;
+        } else if (funct7 == 0x20U && funct3 == 0U) {
+            out.legal = true;
+            out.alu_op = ALU_SUB;
+        } else if (funct7 == 0x20U && funct3 == 5U) {
+            out.legal = true;
+            out.alu_op = ALU_SRA;
+        }
+    } else if (opcode == 0x13U) {
+        if (funct3 == 0U) {
+            out.legal = true;
+            out.alu_op = ALU_ADD;
+        } else if (funct3 == 2U) {
+            out.legal = true;
+            out.alu_op = ALU_SLT;
+        } else if (funct3 == 3U) {
+            out.legal = true;
+            out.alu_op = ALU_SLTU;
+        } else if (funct3 == 4U) {
+            out.legal = true;
+            out.alu_op = ALU_XOR;
+        } else if (funct3 == 6U) {
+            out.legal = true;
+            out.alu_op = ALU_OR;
+        } else if (funct3 == 7U) {
+            out.legal = true;
+            out.alu_op = ALU_AND;
+        } else if (funct3 == 1U && funct6 == 0U) {
+            out.legal = true;
+            out.alu_op = ALU_SLL;
+        } else if (funct3 == 5U && funct6 == 0U) {
+            out.legal = true;
+            out.alu_op = ALU_SRL;
+        } else if (funct3 == 5U && funct6 == 0x10U) {
+            out.legal = true;
+            out.alu_op = ALU_SRA;
+        }
+    }
+
+    if (opcode == 0x03U || opcode == 0x23U) {
+        out.legal = opcode == 0x03U ? funct3 != 7U : funct3 <= 3U;
+        out.mem_bytes = 1U << (funct3 & 3U);
+        out.load_unsigned = (funct3 & 4U) != 0U;
+    }
+    out.writes_rd = out.legal && !out.is_store && (out.rd != 0U);
+}

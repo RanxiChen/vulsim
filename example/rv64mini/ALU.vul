@@ -1,0 +1,28 @@
+#pragma once
+
+#include "header.uh"
+
+INTERFACE() {
+    SERVICE(execute, ARG(uint32_t) op,
+        ARG(uint64_t) op1, ARG(uint64_t) op2, RESP(uint64_t) data);
+}
+
+SERVICE(execute, ARG(uint32_t) op,
+    ARG(uint64_t) op1, ARG(uint64_t) op2, RESP(uint64_t) data) {
+
+    uint32_t shamt = static_cast<uint32_t>(op2 & 63ULL);
+    data = 0ULL;
+    if (op == ALU_ADD) data = op1 + op2;
+    else if (op == ALU_SUB) data = op1 - op2;
+    else if (op == ALU_SLL) data = op1 << shamt;
+    else if (op == ALU_SLT)
+        data = ((op1 ^ 0x8000000000000000ULL) <
+                (op2 ^ 0x8000000000000000ULL)) ? 1ULL : 0ULL;
+    else if (op == ALU_SLTU) data = (op1 < op2) ? 1ULL : 0ULL;
+    else if (op == ALU_XOR) data = op1 ^ op2;
+    else if (op == ALU_SRL) data = op1 >> shamt;
+    else if (op == ALU_SRA)
+        data = static_cast<uint64_t>(static_cast<int64_t>(op1) >> shamt);
+    else if (op == ALU_OR) data = op1 | op2;
+    else if (op == ALU_AND) data = op1 & op2;
+}
