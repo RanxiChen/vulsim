@@ -1,0 +1,215 @@
+#include <cstdio>
+#include <cstdlib>
+#include <defhelper.hpp>
+#include <run.hpp>
+
+TOP("./FASEControllerTop.vul");
+PROJECT(".");
+
+REQUEST(host2ctrl, handshake=1, ARG(uint8_t) data);
+
+GLOBAL() {
+    unsigned cycle = 0;
+    unsigned checks = 0;
+    uint8_t cpu_priv = 3;
+    bool cpu_pending = false;
+    bool inject_ready = false;
+    bool reply_ready = false;
+    bool model_error = false;
+    unsigned accepted = 0;
+    uint32_t accepted_inst = 0;
+    unsigned replies = 0;
+    uint8_t last_reply = 0;
+    unsigned control_calls = 0;
+}
+
+// CPU model: keep status stable for each cycle. The simulation updates pending
+// after an acceptance cycle, matching a CPU register's cycle-boundary update.
+SERVICE(fase_status, handshake=0,
+    RESP(Int<2>) priv, RESP(bool) inject_pending) {
+    priv = cpu_priv;
+    inject_pending = cpu_pending;
+}
+
+SERVICE(fase_control, handshake=0, ARG(bool) stop_fetch) {
+    ++control_calls;
+    if (stop_fetch != (cpu_priv == 3U)) model_error = true;
+}
+
+SERVICE(inject, handshake=1, ready=inject_ready, ARG(uint32_t) inst) {
+    if (cpu_priv != 3U || cpu_pending) model_error = true;
+    ++accepted;
+    accepted_inst = inst;
+}
+
+SERVICE(ctrl2host, handshake=1, ready=reply_ready, ARG(uint8_t) data) {
+    ++replies;
+    last_reply = data;
+}
+
+SIMULATION() {
+    auto check = [&](bool ok, const char* what) {
+        ++checks;
+        if (!ok) {
+            std::printf("FAIL FASEController cycle=%u accepted=%u replies=%u: %s\n",
+                        cycle, accepted, replies, what);
+            std::exit(1);
+        }
+    };
+    unsigned seen_accepts = 0;
+    unsigned seen_replies = 0;
+    auto step = [&]() {
+        sim_nextcycle();
+        ++cycle;
+        check(cycle < 2000U, "timeout");
+        check(!model_error, "CPU mode/pending/control contract");
+        check(control_calls >= cycle, "stop_fetch driven every cycle");
+        check(accepted <= seen_accepts + 1U, "at most one acceptance per cycle");
+        if (accepted != seen_accepts) {
+            check(replies == seen_replies, "no completion in acceptance cycle");
+            cpu_pending = true;
+        }
+        seen_accepts = accepted;
+        seen_replies = replies;
+    };
+    auto send = [&](uint8_t byte) {
+        check(host2ctrl(byte), "expected Host byte acceptance");
+        step();
+    };
+    auto blocked = [&]() {
+        check(!host2ctrl(0x1eU), "Host blocked while command is outstanding");
+        step();
+    };
+    auto command = [&](uint8_t head, uint32_t inst) {
+        unsigned before = accepted;
+        send(head);
+        send(0);  // Original frame retains the CPU-ID byte; demo is single-core.
+        for (unsigned i = 0; i < 4U; ++i) {
+            if (i == 2U) step();  // A gap must not advance the byte counter.
+            send(static_cast<uint8_t>(inst >> (i * 8U)));
+            check(accepted == before, "no injection before complete frame boundary");
+        }
+    };
+
+    // Warm up, then check every privilege encoding while idle.
+    step();
+    for (uint8_t priv = 0; priv < 4U; ++priv) {
+        cpu_priv = priv;
+        step();
+    }
+
+    // Unsupported head: immediately reply, handle backpressure, then accept a
+    // fresh head without draining any supposed arguments of the rejected op.
+    cpu_priv = 0;
+    send(0x01U);
+    for (unsigned i = 0; i < 3U; ++i) blocked();
+    check(replies == 0U && accepted == 0U, "error reply held under backpressure");
+    reply_ready = true;
+    blocked();
+    check(replies == 1U && last_reply == 0xffU, "default error reply");
+
+    // Every head whose low five bits are not SEROP_INST is unsupported.
+    for (unsigned head = 0; head < 256U; ++head) {
+        if ((head & 0x1fU) == 30U) continue;
+        unsigned before = replies;
+        send(static_cast<uint8_t>(head));
+        step();
+        check(replies == before + 1U && last_reply == 0xffU,
+              "unsupported head returns one error and restores idle");
+        check(accepted == 0U, "unsupported heads do not inject");
+    }
+
+    // Receive a complete frame outside M mode; retain it until M is allowed.
+    inject_ready = true;
+    command(0xbeU, 0x89abcdefU);
+    unsigned before_reply = replies;
+    for (unsigned i = 0; i < 3U; ++i) blocked();
+    cpu_priv = 1;
+    blocked();
+    check(accepted == 0U && replies == before_reply, "wait for M mode");
+
+    // M alone is insufficient while a previously accepted instruction is pending.
+    cpu_priv = 3;
+    cpu_pending = true;
+    for (unsigned i = 0; i < 2U; ++i) blocked();
+    check(accepted == 0U, "pending blocks injection");
+    cpu_pending = false;
+    inject_ready = false;
+    for (unsigned i = 0; i < 3U; ++i) blocked();
+    check(accepted == 0U, "CPU backpressure retains the complete instruction");
+
+    inject_ready = true;
+    blocked();
+    check(accepted == 1U && accepted_inst == 0x89abcdefU,
+          "one acceptance with correct little-endian assembly");
+    check(replies == before_reply, "acceptance is not retirement");
+    for (unsigned i = 0; i < 3U; ++i) blocked();
+    cpu_priv = 0;
+    blocked();
+    check(accepted == 1U && replies == before_reply,
+          "pending and privilege changes do not duplicate or complete injection");
+
+    // Successful retirement schedules a reply, which must survive Host backpressure.
+    reply_ready = false;
+    cpu_pending = false;
+    blocked();
+    check(replies == before_reply, "retirement precedes reply state");
+    for (unsigned i = 0; i < 3U; ++i) blocked();
+    cpu_priv = 3;
+    reply_ready = true;
+    blocked();
+    check(replies == before_reply + 1U && last_reply == 0xbeU,
+          "completion echoes the entire original head");
+    check(accepted == 1U, "no repeated injection while replying");
+
+    // All upper-bit combinations remain valid; back-to-back commands must clear
+    // the previous instruction buffer, including transitions from ones to zero.
+    const uint32_t words[8] = {
+        0xffffffffU, 0U, 0x00100093U, 0x80000001U,
+        0x01234567U, 0x76543210U, 0xff00ff00U, 0x00ff00ffU
+    };
+    for (unsigned i = 0; i < 8U; ++i) {
+        uint8_t head = static_cast<uint8_t>((i << 5U) | 30U);
+        unsigned old_accepts = accepted;
+        unsigned old_replies = replies;
+        command(head, words[i]);
+        step();
+        check(accepted == old_accepts + 1U && accepted_inst == words[i],
+              "back-to-back instruction contents and single acceptance");
+        for (unsigned j = 0; j < 2U; ++j) step();
+        check(replies == old_replies, "no reply while CPU pending");
+        cpu_pending = false;
+        step();
+        check(replies == old_replies, "retirement transition does not skip reply state");
+        step();
+        check(replies == old_replies + 1U && last_reply == head,
+              "success reply and recovery to idle");
+    }
+
+    // Reset aborts a partial frame without interpreting its bytes as a new frame.
+    unsigned reset_accepts = accepted;
+    unsigned reset_replies = replies;
+    send(0x1eU); send(0); send(0x93U);
+    sim_reset();
+    step();
+    check(accepted == reset_accepts && replies == reset_replies,
+          "reset aborts partial frame without a completion");
+    command(0x1eU, 0x00100093U);
+    step();
+    check(accepted == reset_accepts + 1U && accepted_inst == 0x00100093U,
+          "fresh command works after reset");
+
+    // Reset also aborts retirement waiting; the CPU reset clears its pending bit.
+    reset_replies = replies;
+    cpu_pending = false;
+    sim_reset();
+    for (unsigned i = 0; i < 3U; ++i) step();
+    check(replies == reset_replies, "reset does not complete aborted injection");
+    send(0x1fU);
+    step();
+    check(replies == reset_replies + 1U && last_reply == 0xffU,
+          "idle and error handling restored after in-flight reset");
+
+    std::printf("PASS FASEController cycles=%u checks=%u injections=%u replies=%u\n",
+                cycle, checks, accepted, replies);
+}

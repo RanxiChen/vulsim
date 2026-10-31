@@ -1,0 +1,21 @@
+#pragma once
+
+#include <defhelper.hpp>
+
+// Test wrapper: resolve FASEController by module name through the IP library.
+INTERFACE() {
+    SERVICE(host2ctrl, handshake=1, ARG(uint8_t) data);
+    REQUEST(ctrl2host, handshake=1, ARG(uint8_t) data);
+    REQUEST(fase_status, handshake=0,
+        RESP(Int<2>) priv, RESP(bool) inject_pending);
+    REQUEST(fase_control, handshake=0, ARG(bool) stop_fetch);
+    REQUEST(inject, handshake=1, ARG(uint32_t) inst);
+}
+
+CHILD_INSTANCE(FASEController, fase);
+
+CONNECT_S_CS(host2ctrl, fase, host2ctrl);
+CONNECT_CR_R(fase, ctrl2host, ctrl2host);
+CONNECT_CR_R(fase, fase_status, fase_status);
+CONNECT_CR_R(fase, fase_control, fase_control);
+CONNECT_CR_R(fase, inject, inject);

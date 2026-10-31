@@ -1,0 +1,37 @@
+#pragma once
+
+#include <defhelper.hpp>
+
+INTERFACE() {
+    SERVICE(host2ctrl, handshake=1, ARG(uint8_t) data);
+    REQUEST(ctrl2host, handshake=1, ARG(uint8_t) data);
+    REQUEST(result, handshake=1, ARG(uint32_t) inst, ARG(uint32_t) ones);
+    QUERY(pending, bool);
+    QUERY(buffered, bool);
+    QUERY(bytes_done, uint8_t);
+    QUERY(partial_count, uint32_t);
+    QUERY(fetch_stopped, bool);
+}
+
+// Controller comes from vullib/ip; backend is local to this example project.
+CHILD_INSTANCE(FASEController, fase);
+CHILD_INSTANCE(FASEPopcountBackend, backend);
+
+CONNECT_S_CS(host2ctrl, fase, host2ctrl);
+CONNECT_CR_R(fase, ctrl2host, ctrl2host);
+CONNECT_CR_CS(fase, fase_status, backend, fase_status);
+CONNECT_CR_CS(fase, fase_control, backend, fase_control);
+CONNECT_CR_CS(fase, inject, backend, inject);
+CONNECT_CR_R(backend, result, result);
+
+USE_CHILD_QUERY(backend, pending, backend_pending, bool);
+USE_CHILD_QUERY(backend, buffered, backend_buffered, bool);
+USE_CHILD_QUERY(backend, bytes_done, backend_bytes_done, uint8_t);
+USE_CHILD_QUERY(backend, partial_count, backend_partial_count, uint32_t);
+USE_CHILD_QUERY(backend, fetch_stopped, backend_fetch_stopped, bool);
+
+QUERY(pending, bool) { return backend_pending(); }
+QUERY(buffered, bool) { return backend_buffered(); }
+QUERY(bytes_done, uint8_t) { return backend_bytes_done(); }
+QUERY(partial_count, uint32_t) { return backend_partial_count(); }
+QUERY(fetch_stopped, bool) { return backend_fetch_stopped(); }

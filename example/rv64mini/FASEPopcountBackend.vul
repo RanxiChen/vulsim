@@ -1,0 +1,92 @@
+#pragma once
+
+#include <defhelper.hpp>
+
+// Toy backend: buffer one pending injection, then count eight bits per cycle.
+INTERFACE() {
+    SERVICE(inject, handshake=1, ARG(uint32_t) inst);
+    SERVICE(fase_status, handshake=0,
+        RESP(Int<2>) priv, RESP(bool) inject_pending);
+    SERVICE(fase_control, handshake=0, ARG(bool) stop_fetch);
+    REQUEST(result, handshake=1, ARG(uint32_t) inst, ARG(uint32_t) ones);
+
+    // Passive observations for the integration test, not CPU transaction ports.
+    QUERY(pending, bool);
+    QUERY(buffered, bool);
+    QUERY(bytes_done, uint8_t);
+    QUERY(partial_count, uint32_t);
+    QUERY(fetch_stopped, bool);
+}
+
+QUEUE(inst_fifo, uint32_t, 4);
+REGISTER(pending_flag, bool) { pending_flag = false; }
+REGISTER(active, bool) { active = false; }
+REGISTER(original_inst, uint32_t) { original_inst = 0; }
+REGISTER(remaining, uint32_t) { remaining = 0; }
+REGISTER(processed_bytes, uint8_t) { processed_bytes = 0; }
+REGISTER(accumulated, uint32_t) { accumulated = 0; }
+REGISTER(result_valid, bool) { result_valid = false; }
+REGISTER(completed_inst, uint32_t) { completed_inst = 0; }
+REGISTER(completed_ones, uint32_t) { completed_ones = 0; }
+// No normal fetch path exists; retain the received control level for observation.
+REGISTER(fetch_stop, bool) { fetch_stop = false; }
+
+SERVICE(inject, handshake=1,
+    ready=(!pending_flag && !active && !result_valid && inst_fifo.enqready()),
+    ARG(uint32_t) inst) {
+    inst_fifo.enqnext(inst);
+    pending_flag.setnext(true);
+}
+
+SERVICE(fase_status, handshake=0,
+    RESP(Int<2>) priv, RESP(bool) inject_pending) {
+    priv = Int<2>(3U);
+    inject_pending = pending_flag;
+}
+
+SERVICE(fase_control, handshake=0, ARG(bool) stop_fetch) {
+    fetch_stop.setnext(stop_fetch);
+}
+
+QUERY(pending, bool) { return pending_flag; }
+QUERY(buffered, bool) { return inst_fifo.deqvalid(); }
+QUERY(bytes_done, uint8_t) { return processed_bytes; }
+QUERY(partial_count, uint32_t) { return accumulated; }
+QUERY(fetch_stopped, bool) { return fetch_stop; }
+
+TICK_IMPL() {
+    if (result_valid) {
+        if (result(completed_inst, completed_ones)) {
+            result_valid.setnext(false);
+        }
+    }
+
+    if (!active && pending_flag && inst_fifo.deqvalid()) {
+        uint32_t inst = inst_fifo.front();
+        inst_fifo.deqnext();
+        original_inst.setnext(inst);
+        remaining.setnext(inst);
+        accumulated.setnext(0);
+        processed_bytes.setnext(0);
+        active.setnext(true);
+    } else if (active) {
+        // Only the current low byte contributes to this cycle's partial count.
+        uint32_t word = remaining;
+        uint32_t byte_ones = 0;
+        for (uint32_t bit = 0; bit < 8U; ++bit) {
+            byte_ones = byte_ones + ((word >> bit) & 1U);
+        }
+        uint32_t total = static_cast<uint32_t>(accumulated) + byte_ones;
+        accumulated.setnext(total);
+        remaining.setnext(word >> 8U);
+        processed_bytes.setnext(processed_bytes + 1U);
+
+        if (processed_bytes == 3U) {
+            active.setnext(false);
+            pending_flag.setnext(false);
+            completed_inst.setnext(original_inst);
+            completed_ones.setnext(total);
+            result_valid.setnext(true);
+        }
+    }
+}

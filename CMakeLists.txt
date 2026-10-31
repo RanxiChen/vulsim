@@ -140,7 +140,7 @@ foreach(tool ${TOOL_SOURCES})
 endforeach()
 
 # Copy project runtime directories to the build directory on each build:
-# - vullib: only top-level files (non-recursive)
+# - vullib: top-level runtime files plus the full ip directory recursively
 # - example: full directory recursively
 file(GLOB VULLIB_TOP_LEVEL_ITEMS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "vullib/*")
 set(VULLIB_COPY_COMMANDS "")
@@ -166,6 +166,9 @@ add_custom_target(copy_project_dirs ALL
             "${CMAKE_CURRENT_SOURCE_DIR}/doc/userguide"
             "${CMAKE_CURRENT_BINARY_DIR}/userguide"
     ${VULLIB_COPY_COMMANDS}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/vullib/ip"
+            "${CMAKE_CURRENT_BINARY_DIR}/vullib/ip"
     COMMENT "Copying vullib, example, and userguide into build directory"
 )
 

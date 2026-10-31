@@ -330,6 +330,27 @@ VulStaticProject parseVcppStaticProjectImpl(
             return iter->second;
         }
         const string candidate = mod_name + string(vulsource::ModuleExtension);
+        // Prefer the fixed IP library before falling back to the project.
+        const path ip_dir("./vullib/ip");
+        if (is_directory(ip_dir)) {
+            vector<path> found_paths;
+            for (const auto &entry : recursive_directory_iterator(ip_dir)) {
+                if (entry.is_regular_file() && entry.path().filename() == candidate) {
+                    found_paths.push_back(entry.path());
+                }
+            }
+            if (found_paths.size() > 1) {
+                string err = "Multiple IP files found for module " + mod_name + ":";
+                for (const auto &p : found_paths) {
+                    err += "\n  " + p.string();
+                }
+                throw VulException(err);
+            }
+            if (!found_paths.empty()) {
+                module_file_path_cache[mod_name] = found_paths.front();
+                return found_paths.front();
+            }
+        }
         {
             // find in project directory recursively
             vector<path> found_paths;
